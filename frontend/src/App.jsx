@@ -16,7 +16,7 @@ function PrivateRoute({ children }) {
 
 function App() {
   return (
-    <>
+    <div className="dark bg-black text-white min-h-screen relative overflow-hidden">
       <Navbar />
       <Routes>
         <Route path="/" element={<Home />} />
@@ -55,7 +55,7 @@ function App() {
           }
         />
       </Routes>
-    </>
+    </div>
   )
 }
 

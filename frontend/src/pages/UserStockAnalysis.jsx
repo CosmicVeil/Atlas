@@ -228,9 +228,8 @@ function UserStockAnalysis() {
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Header */}
         <div className="space-y-2">
-          <h1 className="text-4xl font-light tracking-tight">AI Stock Analysis</h1>
-          <p className="text-white/60">
-            Enter any stock ticker to get an AI-powered analysis with predictions, pros, cons, and recommendations.
+          <p className="text-white/40 text-sm">
+            Enter any stock ticker to get an AI-powered analysis with predictions, pros, cons, and recommendations
           </p>
         </div>
 
@@ -258,16 +257,16 @@ function UserStockAnalysis() {
               <Button
                 onClick={handleAnalyze}
                 disabled={isLoading}
-                className="gap-2 px-8 border border-white/20 text-white bg-transparent hover:bg-white/5 cursor-pointer"
+                className="gap-2 px-8 bg-white text-black hover:bg-white/90 cursor-pointer font-medium"
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-black" />
                     Analyzing...
                   </>
                 ) : (
                   <>
-                    <Search className="w-4 h-4" />
+                    <Search className="w-4 h-4 text-black" />
                     Analyze
                   </>
                 )}
