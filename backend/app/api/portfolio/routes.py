@@ -1,0 +1,66 @@
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.extensions import db
+from app.models.portfolio import Portfolio
+
+portfolio_bp = Blueprint('portfolio', __name__)
+
+@portfolio_bp.route('/', methods=['POST'])
+@jwt_required()
+def create_portfolio():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    name = data.get('name')
+
+    if not name:
+        return jsonify({'error': 'Name is required'}), 400
+
+    portfolio = Portfolio(name=name, user_id=user_id)
+    db.session.add(portfolio)
+    db.session.commit()
+    return jsonify(portfolio.to_dict()), 201
+
+
+@portfolio_bp.route('/<int:portfolio_id>', methods=['GET'])
+@jwt_required()
+def get_portfolio(portfolio_id):
+    user_id = get_jwt_identity()
+    portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user_id).first()
+    if not portfolio:
+        return jsonify({'error': 'Portfolio not found'}), 404
+    return jsonify(portfolio.to_dict())
+
+
+@portfolio_bp.route('/', methods=['GET'])
+@jwt_required()
+def get_portfolios():
+    user_id = get_jwt_identity()
+    portfolios = Portfolio.query.filter_by(user_id=user_id).all()
+    return jsonify([p.to_dict() for p in portfolios])
+
+
+@portfolio_bp.route('/<int:portfolio_id>', methods=['PUT'])
+@jwt_required()
+def update_portfolio(portfolio_id):
+    user_id = get_jwt_identity()
+    data = request.get_json()
+
+    portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user_id).first()
+    if not portfolio:
+        return jsonify({'error': 'Portfolio not found'}), 404
+
+    portfolio.name = data.get('name', portfolio.name)
+    db.session.commit()
+    return jsonify(portfolio.to_dict()), 200
+
+
+@portfolio_bp.route('/<int:portfolio_id>', methods=['DELETE'])
+@jwt_required()
+def delete_portfolio(portfolio_id):
+    user_id = get_jwt_identity()
+    portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user_id).first()
+    if not portfolio:
+        return jsonify({'error': 'Portfolio not found'}), 404
+    db.session.delete(portfolio)
+    db.session.commit()
+    return jsonify({'message': 'Portfolio deleted successfully'}), 200

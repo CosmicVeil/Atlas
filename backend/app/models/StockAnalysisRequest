@@ -1,0 +1,36 @@
+class StockAnalysisRequest:
+    def __init__(self, tickets, budget, recommendations, reasoning, confidence_score):
+        self.tickets = tickets
+        self.budget = budget
+        self.recommendations = recommendations
+        self.reasoning = reasoning
+        self.confidence_score = confidence_score
+
+    def get_tickets(self):
+        return self.tickets
+    def get_budget(self):
+        return self.budget
+    def get_recommendations(self):
+        return self.recommendations
+
+    def get_reasoning(self):
+        return self.reasoning
+    def get_confidence_score(self):
+        return self.confidence_score
+
+    def set_tickets(self, tickets):
+        self.tickets = tickets
+    def set_budget(self, budget):
+        self.budget = budget
+    def set_recommendations(self, recommendations):
+        self.recommendations = recommendations
+    def set_reasoning(self, reasoning):
+        self.reasoning = reasoning
+
+    def set_confidence_score(self, confidence_score):
+        self.confidence_score = confidence_score
+
+    def get_all_info(self):
+        return self.tickets, self.budget, self.recommendations, self.reasoning, self.confidence_score
+    
+    
