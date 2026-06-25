@@ -326,12 +326,12 @@ function AIAnalysisScreen() {
 
         {/* Tabs */}
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2 bg-white/5 border border-white/10 p-1">
-            <TabsTrigger value="recommended" className="gap-2 text-white/60 data-[state=active]:bg-white/10 data-[state=active]:text-white cursor-pointer py-2">
+          <TabsList className="grid w-full max-w-md grid-cols-2 bg-white/5 border border-white/10 p-1 h-11">
+            <TabsTrigger value="recommended" className="gap-2 text-white/60 data-[state=active]:bg-white/10 data-[state=active]:text-white cursor-pointer">
               <TrendingUp className="w-4 h-4" />
               Recommended Stocks
             </TabsTrigger>
-            <TabsTrigger value="worst" className="gap-2 text-white/60 data-[state=active]:bg-white/10 data-[state=active]:text-white cursor-pointer py-2">
+            <TabsTrigger value="worst" className="gap-2 text-white/60 data-[state=active]:bg-white/10 data-[state=active]:text-white cursor-pointer">
               <TrendingDown className="w-4 h-4" />
               Stocks to Avoid
             </TabsTrigger>
