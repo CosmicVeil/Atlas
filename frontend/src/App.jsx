@@ -6,6 +6,8 @@ import Signup from './pages/Signup'
 import Home from './pages/Home'
 import Portfolio from './pages/Portfolio'
 import Profile from './pages/Profile'
+import AIAnalysisScreen from './pages/AIAnalysisScreen'
+import UserStockAnalysis from './pages/UserStockAnalysis'
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -33,6 +35,22 @@ function App() {
           element={
             <PrivateRoute>
               <Profile />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/ai-analysis"
+          element={
+            <PrivateRoute>
+              <AIAnalysisScreen />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/stock-data"
+          element={
+            <PrivateRoute>
+              <UserStockAnalysis />
             </PrivateRoute>
           }
         />

@@ -1,11 +1,20 @@
+# Atlas - AI Trading & Stock Analysis
 
-  # Untitled
+Algorithmic trading and stock analysis platform powered by AI.
 
-  This is a code bundle for Untitled. The original project is available at https://www.figma.com/design/u9qCupEVp9stzUtT679wEe/Untitled.
+## Running the Project
 
-  ## Running the code
+### 1. Run the Backend
+Navigate to the `backend` folder, set up your Python virtual environment and run the Flask server:
+```powershell
+# In the backend directory
+.\.venv\Scripts\python.exe wsgi.py
+```
 
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
-  
+### 2. Run the Frontend
+Navigate to the `frontend` directory, install packages, and start the development server:
+```bash
+# In the frontend directory
+npm install --legacy-peer-deps
+npm run dev
+```
