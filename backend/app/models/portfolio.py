@@ -1,16 +1,18 @@
 from app.extensions import db
 
 class Portfolio(db.Model):
+    __tablename__ = 'portfolios'
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, nullable=False)
+
+    # this lets you do portfolio.holdings to get all its holdings
+    holdings = db.relationship('Holding', backref='portfolio', lazy=True, cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
             'id': self.id,
             'name': self.name,
-            'user_id': self.user_id
+            'user_id': self.user_id,
         }
-
-    def __repr__(self):
-        return f"<Portfolio {self.name}>"
