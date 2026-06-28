@@ -97,7 +97,7 @@ def get_full_stock_info(symbol):
 
     return overview |quote  # merges both dicts into one
 
-
+print(get_full_stock_info('IBM'))
 
 def write_market_data():
     listOfStocks = getNamesOfStocks()
@@ -105,14 +105,33 @@ def write_market_data():
     listOfDicts = []
 
     for stock in listOfStocks:
-        curr_dict = get_full_stock_info(symbol)
+        curr_dict = get_full_stock_info(stock)
         listOfDicts.append(curr_dict)
 
     with open("data/stock_info.csv", mode="w", newline="", encoding="utf-8") as file:
+
+        fieldnames = [
+            'symbol',
+            'name',
+            'description',
+            'sector',
+            'industry',
+            'market_cap',
+            'pe_ratio',
+            'week_52_high',
+            'week_52_low',
+            'dividend_yield',
+            'eps',
+            'price',
+            'change',
+            'change_percent',
+            'volume',
+            'previous_close'
+        ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)
     
         writer.writeheader()  # Writes the header row
-        writer.writerows(data)  # Writes data rows
+        writer.writerows(listOfDicts)  # Writes data rows
 
 def read_market_data():
 
