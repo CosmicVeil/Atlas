@@ -97,4 +97,34 @@ def get_full_stock_info(symbol):
 
     return overview |quote  # merges both dicts into one
 
-print(get_full_stock_info("IBM"))
+
+
+def write_market_data():
+    listOfStocks = getNamesOfStocks()
+
+    listOfDicts = []
+
+    for stock in listOfStocks:
+        curr_dict = get_full_stock_info(symbol)
+        listOfDicts.append(curr_dict)
+
+    with open("data/stock_info.csv", mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+    
+        writer.writeheader()  # Writes the header row
+        writer.writerows(data)  # Writes data rows
+
+def read_market_data():
+
+    listOfDicts = []
+
+    with open('data/stock_info.csv', mode='r', newline='', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            listOfDicts.append(row)  # Access values by column header
+    
+    return listOfDicts
+
+#TODO: go past the API limit of 5 calls a day for one day to get all the pertinent information
+
+
