@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { useAuth } from "../context/AuthContext";
+import { useCurrency } from "../context/CurrencyContext";
 import { getStockDetail, getAllStocks } from "../api/stockData";
 import {
   Search,
@@ -28,28 +29,9 @@ const TABS = [
   { key: "browse", label: "Browse", icon: LayoutList },
 ];
 
-/* ─────────────────── helpers ─────────────────── */
-
-function formatCurrency(val) {
-  if (!val || val === "None" || val === "null") return "—";
-  const num = parseFloat(val);
-  if (isNaN(num)) return val;
-  if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
-  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
-  return `$${num.toFixed(2)}`;
-}
-
-function formatNumberRaw(val) {
-  if (!val || val === "None" || val === "null") return "—";
-  const num = parseFloat(val);
-  if (isNaN(num)) return val;
-  return num.toLocaleString();
-}
-
-/* ─────────────────── component ─────────────────── */
-
 function UserStockAnalysis() {
   const { token } = useAuth();
+  const { currency, EXCHANGE_RATES } = useCurrency();
   const [activeTab, setActiveTab] = useState("search");
 
   /* Search tab state */
@@ -65,8 +47,31 @@ function UserStockAnalysis() {
   const [filterText, setFilterText] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "symbol", direction: "asc" });
 
-  /* ── Search tab handlers ── */
+  // Dynamic currency formatter helper
+  const formatVal = (val, isRawNumber = false) => {
+    if (val === undefined || val === null || val === "None" || val === "") return "—";
+    const num = parseFloat(val);
+    if (isNaN(num)) return val;
 
+    if (isRawNumber) {
+      return num.toLocaleString();
+    }
+
+    // Currency values
+    const rate = EXCHANGE_RATES[currency].rate;
+    const symbol = EXCHANGE_RATES[currency].symbol;
+    const converted = num * rate;
+
+    if (converted >= 1e9) {
+      return `${symbol}${(converted / 1e9).toFixed(2)}B`;
+    }
+    if (converted >= 1e6) {
+      return `${symbol}${(converted / 1e6).toFixed(2)}M`;
+    }
+    return `${symbol}${converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  /* ── Search tab handlers ── */
   const handleSearch = async () => {
     if (!ticker.trim()) {
       setSearchError("Please enter a stock ticker symbol");
@@ -91,7 +96,6 @@ function UserStockAnalysis() {
   };
 
   /* ── Browse tab handlers ── */
-
   const fetchAllStocks = async () => {
     setIsLoadingBrowse(true);
     setBrowseError("");
@@ -116,7 +120,6 @@ function UserStockAnalysis() {
   }, [activeTab]);
 
   /* ── Sorting & Filtering ── */
-
   const handleSort = (key) => {
     setSortConfig((prev) => ({
       key,
@@ -160,7 +163,6 @@ function UserStockAnalysis() {
   }, [allStocks, filterText, sortConfig]);
 
   /* ── column definitions for table ── */
-
   const columns = [
     { key: "symbol", label: "Symbol", width: "w-20" },
     { key: "name", label: "Name", width: "w-48" },
@@ -270,11 +272,11 @@ function UserStockAnalysis() {
                       </div>
                       <div className="text-right">
                         <div className="text-4xl font-light">
-                          ${parseFloat(stock.price || 0).toFixed(2)}
+                          {formatVal(stock.price)}
                         </div>
                         <div className={`text-sm font-medium flex items-center justify-end gap-1 mt-1 ${parseFloat(stock.change || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                           {parseFloat(stock.change || 0) >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                          {parseFloat(stock.change || 0) >= 0 ? '+' : ''}{parseFloat(stock.change || 0).toFixed(2)} ({stock.change_percent || '0%'})
+                          {parseFloat(stock.change || 0) >= 0 ? '+' : ''}{formatVal(stock.change)} ({stock.change_percent || '0%'})
                         </div>
                       </div>
                     </div>
@@ -288,12 +290,12 @@ function UserStockAnalysis() {
 
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <MetricCard icon={DollarSign} label="Market Cap" value={formatCurrency(stock.market_cap)} />
+                  <MetricCard icon={DollarSign} label="Market Cap" value={formatVal(stock.market_cap)} />
                   <MetricCard icon={Activity} label="P/E Ratio" value={stock.pe_ratio || "—"} />
-                  <MetricCard icon={BarChart3} label="Volume" value={formatNumberRaw(stock.volume)} />
+                  <MetricCard icon={BarChart3} label="Volume" value={formatVal(stock.volume, true)} />
                   <MetricCard icon={Hash} label="EPS" value={stock.eps || "—"} />
-                  <MetricCard icon={TrendingUp} label="52-Week High" value={`$${stock.week_52_high || "—"}`} />
-                  <MetricCard icon={TrendingDown} label="52-Week Low" value={`$${stock.week_52_low || "—"}`} />
+                  <MetricCard icon={TrendingUp} label="52-Week High" value={formatVal(stock.week_52_high)} />
+                  <MetricCard icon={TrendingDown} label="52-Week Low" value={formatVal(stock.week_52_low)} />
                   <MetricCard icon={DollarSign} label="Dividend Yield" value={stock.dividend_yield ? `${(parseFloat(stock.dividend_yield) * 100).toFixed(2)}%` : "—"} />
                   <MetricCard icon={Building2} label="Industry" value={stock.industry || "—"} />
                 </div>
@@ -399,7 +401,7 @@ function UserStockAnalysis() {
                               {s.name || "—"}
                             </td>
                             <td className="px-4 py-3 font-mono">
-                              ${!isNaN(price) ? price.toFixed(2) : "—"}
+                              {formatVal(s.price)}
                             </td>
                             <td className="px-4 py-3">
                               <span className={`flex items-center gap-1 ${change >= 0 ? "text-emerald-400" : "text-red-400"}`}>
@@ -408,11 +410,11 @@ function UserStockAnalysis() {
                               </span>
                             </td>
                             <td className="px-4 py-3 font-mono text-white/60">
-                              {formatNumberRaw(s.volume)}
+                              {formatVal(s.volume, true)}
                             </td>
                             <td className="px-4 py-3 text-white/60">{s.sector || "—"}</td>
                             <td className="px-4 py-3 text-white/60">
-                              {formatCurrency(s.market_cap)}
+                              {formatVal(s.market_cap)}
                             </td>
                             <td className="px-4 py-3 font-mono text-white/60">
                               {s.pe_ratio || "—"}
@@ -440,8 +442,7 @@ function UserStockAnalysis() {
   );
 }
 
-/* ─────────────────── subcomponents ─────────────────── */
-
+/* ────────────────── subcomponents ────────────────── */
 function MetricCard({ icon: Icon, label, value }) {
   return (
     <Card className="bg-card border-border">

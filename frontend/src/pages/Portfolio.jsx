@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { getPortfolios, createPortfolio, updatePortfolio, deletePortfolio } from '../api/portfolio';
+import { getHoldings as getHoldingsApi, addHolding as addHoldingApi, deleteHolding as deleteHoldingApi } from '../api/holdings';
+import { getPortfolioRecommendations } from '../api/ai';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search } from 'lucide-react';
+import { useCurrency } from '../context/CurrencyContext';
+import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 // Mock holdings helper to pre-populate list on first view of default portfolios
@@ -23,9 +26,19 @@ const INITIAL_MOCK_HOLDINGS = {
 
 function Portfolio() {
   const { token } = useAuth();
+  const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
   const [portfolios, setPortfolios] = useState([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState(null);
   const [selectedStock, setSelectedStock] = useState(null);
+
+  // Holdings synced from backend
+  const [holdings, setHoldings] = useState([]);
+  const [portfolioSummary, setPortfolioSummary] = useState(null);
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
+  
+  // AI Recommendations
+  const [aiRecs, setAiRecs] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Modals / forms states
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
@@ -54,6 +67,59 @@ function Portfolio() {
       setPortfolios(data);
     } else {
       setPortfolios([]);
+    }
+  }
+
+  // Fetch holdings when selection changes
+  useEffect(() => {
+    if (selectedPortfolio && token) {
+      fetchHoldings(selectedPortfolio.id);
+    } else {
+      setHoldings([]);
+      setPortfolioSummary(null);
+      setAiRecs(null);
+    }
+  }, [selectedPortfolio, token]);
+
+  async function fetchHoldings(portfolioId) {
+    setHoldingsLoading(true);
+    try {
+      const data = await getHoldingsApi(token, portfolioId);
+      if (data && !data.error) {
+        const normalizedHoldings = (data.holdings || []).map(h => ({
+          id: h.id,
+          ticker: h.symbol,
+          shares: h.shares,
+          buyPrice: h.buy_price,
+          buyDate: h.date_bought,
+          currentPrice: h.current_price,
+          amountInvested: h.amount_invested,
+          currentValue: h.current_value,
+          gainLoss: h.gain_loss,
+          gainLossPct: h.gain_loss_pct
+        }));
+        setHoldings(normalizedHoldings);
+        setPortfolioSummary(data.summary || null);
+      }
+    } catch (e) {
+      console.error("Error fetching holdings:", e);
+    } finally {
+      setHoldingsLoading(false);
+    }
+  }
+
+  async function fetchAIAnalysis() {
+    if (!selectedPortfolio) return;
+    setAiLoading(true);
+    try {
+      const data = await getPortfolioRecommendations(token, selectedPortfolio.id);
+      if (data && !data.error) {
+        setAiRecs(data);
+      }
+    } catch (e) {
+      console.error("Error loading AI recommendations:", e);
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -113,68 +179,53 @@ function Portfolio() {
   }
 
   // Add stock to holdings
-  function handleAddStock(e) {
+  async function handleAddStock(e) {
     e.preventDefault();
     if (!newStockTicker.trim() || !newStockShares || !newStockBuyPrice) return;
 
-    const currentPriceFloat = parseFloat(newStockBuyPrice) * (1 + (Math.random() * 0.3 - 0.05)); // Simulated change
-
-    const newStockObj = {
-      id: Math.random().toString(),
-      ticker: newStockTicker.toUpperCase(),
+    const rate = EXCHANGE_RATES[currency].rate;
+    const holdingData = {
+      symbol: newStockTicker.trim().toUpperCase(),
       shares: parseFloat(newStockShares),
-      buyPrice: parseFloat(newStockBuyPrice),
-      buyDate: newStockBuyDate || new Date().toISOString().split('T')[0],
-      currentPrice: parseFloat(currentPriceFloat.toFixed(2))
+      buy_price: parseFloat(newStockBuyPrice) / rate,
+      date_bought: newStockBuyDate || new Date().toISOString().split('T')[0]
     };
 
-    const currentHoldings = getHoldings(selectedPortfolio);
-    const updatedHoldings = [...currentHoldings, newStockObj];
-
-    const key = `atlas_portfolio_stocks_${selectedPortfolio.id}`;
-    localStorage.setItem(key, JSON.stringify(updatedHoldings));
-
-    // Reset stock fields
-    setNewStockTicker('');
-    setNewStockShares('');
-    setNewStockBuyPrice('');
-    setNewStockBuyDate('');
-    setShowAddStock(false);
+    try {
+      const res = await addHoldingApi(token, selectedPortfolio.id, holdingData);
+      if (res && !res.error) {
+        fetchHoldings(selectedPortfolio.id);
+        fetchPortfolios(); // Refresh portfolios grid values
+        // Reset stock fields
+        setNewStockTicker('');
+        setNewStockShares('');
+        setNewStockBuyPrice('');
+        setNewStockBuyDate('');
+        setShowAddStock(false);
+      } else {
+        alert(res.error || "Failed to add stock. Symbol might be invalid.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error adding stock.");
+    }
   }
 
   // Delete stock from holdings
-  function handleDeleteStock(stockId) {
-    const currentHoldings = getHoldings(selectedPortfolio);
-    const updatedHoldings = currentHoldings.filter(s => s.id !== stockId);
-
-    const key = `atlas_portfolio_stocks_${selectedPortfolio.id}`;
-    localStorage.setItem(key, JSON.stringify(updatedHoldings));
-    
-    // Force rerender by updating selectedPortfolio state
-    setSelectedPortfolio({ ...selectedPortfolio });
-  }
-
-  // Calculate portfolio statistics
-  function calculateStats(portfolio) {
-    const holdings = getHoldings(portfolio);
-    let totalValue = 0;
-    let totalCost = 0;
-
-    holdings.forEach(stock => {
-      totalValue += stock.shares * stock.currentPrice;
-      totalCost += stock.shares * stock.buyPrice;
-    });
-
-    const totalGain = totalValue - totalCost;
-    const gainPercent = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-
-    return {
-      totalValue,
-      totalGain,
-      gainPercent,
-      holdingsCount: holdings.length,
-      holdings
-    };
+  async function handleDeleteStock(holdingId) {
+    try {
+      const res = await deleteHoldingApi(token, selectedPortfolio.id, holdingId);
+      if (res && !res.error) {
+        fetchHoldings(selectedPortfolio.id);
+        fetchPortfolios(); // Refresh portfolios grid values
+        setSelectedStock(null);
+      } else {
+        alert(res.error || "Failed to remove stock.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error removing stock.");
+    }
   }
 
   // Render view: Stock Detail
@@ -215,7 +266,7 @@ function Portfolio() {
             </motion.button>
             <div>
               <h1 className="text-5xl font-light tracking-tight text-white">{selectedStock.ticker}</h1>
-              <p className="text-white/40 mt-2">${selectedStock.currentPrice.toFixed(2)}</p>
+              <p className="text-white/40 mt-2">{convertAndFormat(selectedStock.currentPrice)}</p>
             </div>
           </div>
 
@@ -227,17 +278,17 @@ function Portfolio() {
             </div>
             <div className="bg-black border border-white/5 p-8">
               <p className="text-xs text-white/40 mb-2 tracking-wider uppercase">Buy Price</p>
-              <p className="text-3xl text-white font-light">${selectedStock.buyPrice.toFixed(2)}</p>
+              <p className="text-3xl text-white font-light">{convertAndFormat(selectedStock.buyPrice)}</p>
             </div>
             <div className="bg-black border border-white/5 p-8">
               <p className="text-xs text-white/40 mb-2 tracking-wider uppercase">Total Value</p>
-              <p className="text-3xl text-white font-light">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-3xl text-white font-light">{convertAndFormat(totalValue)}</p>
             </div>
             <div className="bg-black border border-white/5 p-8">
               <p className="text-xs text-white/40 mb-2 tracking-wider uppercase">Gain/Loss</p>
               <div>
                 <p className={`text-3xl font-light ${gain >= 0 ? 'text-white' : 'text-white/60'}`}>
-                  {gain >= 0 ? '+' : ''}${Math.abs(gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {gain >= 0 ? '+' : '-'}{convertAndFormat(Math.abs(gain))}
                 </p>
                 <p className="text-sm text-white/40 mt-1">
                   ({gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(2)}%)
@@ -282,7 +333,7 @@ function Portfolio() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/60">Total Cost</span>
-                  <span className="text-white">${totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="text-white">{convertAndFormat(totalCost)}</span>
                 </div>
               </div>
             </div>
@@ -291,7 +342,7 @@ function Portfolio() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-white/60">Current Price</span>
-                  <span className="text-white">${selectedStock.currentPrice.toFixed(2)}</span>
+                  <span className="text-white">{convertAndFormat(selectedStock.currentPrice)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/60">Day Change</span>
@@ -311,7 +362,12 @@ function Portfolio() {
 
   // Render view: Portfolio Detail
   if (selectedPortfolio) {
-    const stats = calculateStats(selectedPortfolio);
+    const stats = {
+      totalValue: portfolioSummary ? portfolioSummary.total_value : 0,
+      totalGain: portfolioSummary ? portfolioSummary.total_gain_loss : 0,
+      gainPercent: portfolioSummary ? portfolioSummary.total_gain_loss_pct : 0,
+      holdings: holdings
+    };
 
     return (
       <div className="min-h-screen bg-black relative overflow-hidden text-white pt-24">
@@ -383,7 +439,10 @@ function Portfolio() {
             </div>
             <div className="flex items-center gap-4">
               <motion.button
-                onClick={() => setShowAIAnalysis(true)}
+                onClick={() => {
+                  setShowAIAnalysis(true);
+                  fetchAIAnalysis();
+                }}
                 className="px-6 py-3 border border-white/20 bg-transparent text-white text-sm tracking-wide hover:bg-white/5 transition-all flex items-center gap-2 cursor-pointer"
                 whileHover={{ scale: 1.05 }}
                 transition={{ type: "spring", stiffness: 400, damping: 10 }}
@@ -407,13 +466,13 @@ function Portfolio() {
           <div className="grid grid-cols-3 gap-px bg-white/5 mb-12">
             <div className="bg-black border border-white/5 p-8">
               <p className="text-xs text-white/40 mb-2 tracking-wider uppercase">Total Value</p>
-              <p className="text-3xl text-white font-light">${stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-3xl text-white font-light">{convertAndFormat(stats.totalValue)}</p>
             </div>
             <div className="bg-black border border-white/5 p-8">
               <p className="text-xs text-white/40 mb-2 tracking-wider uppercase">Total Gain/Loss</p>
               <div className="flex items-center gap-2">
                 <p className={`text-3xl font-light ${stats.totalGain >= 0 ? 'text-white' : 'text-white/60'}`}>
-                  {stats.totalGain >= 0 ? '+' : '-'}${Math.abs(stats.totalGain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {stats.totalGain >= 0 ? '+' : '-'}{convertAndFormat(Math.abs(stats.totalGain))}
                 </p>
               </div>
             </div>
@@ -464,12 +523,12 @@ function Portfolio() {
                   >
                     <p className="text-white font-medium">{stock.ticker}</p>
                     <p className="text-white/60">{stock.shares}</p>
-                    <p className="text-white/60">${stock.buyPrice.toFixed(2)}</p>
-                    <p className="text-white/60">${stock.currentPrice.toFixed(2)}</p>
-                    <p className="text-white font-light">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-white/60">{convertAndFormat(stock.buyPrice)}</p>
+                    <p className="text-white/60">{convertAndFormat(stock.currentPrice)}</p>
+                    <p className="text-white font-light">{convertAndFormat(totalValue)}</p>
                     <div>
                       <p className={gain >= 0 ? 'text-white' : 'text-white/60'}>
-                        {gain >= 0 ? '+' : ''}${Math.abs(gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {gain >= 0 ? '+' : '-'}{convertAndFormat(Math.abs(gain))}
                       </p>
                       <p className="text-xs text-white/40 font-light">
                         ({gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(2)}%)
@@ -528,7 +587,7 @@ function Portfolio() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-white/40 tracking-wider uppercase mb-2 block">Buy Price ($)</label>
+                  <label className="text-xs text-white/40 tracking-wider uppercase mb-2 block">Buy Price ({getCurrencySymbol()})</label>
                   <input
                     type="number"
                     required
@@ -579,33 +638,62 @@ function Portfolio() {
                 <Brain className="w-6 h-6 text-white" strokeWidth={1} />
                 <h2 className="text-2xl text-white tracking-wide font-light">AI Portfolio Analysis</h2>
               </div>
-              <div className="space-y-6">
-                <div className="border border-white/5 p-6 bg-black">
-                  <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Overall Assessment</h3>
-                  <p className="text-white/80 leading-relaxed text-sm">
-                    Your portfolio shows returns generated by key holdings.
-                    {stats.gainPercent >= 0 
-                      ? ` Performance is in positive territory with a return of ${stats.gainPercent.toFixed(2)}%.` 
-                      : ` Performance is currently down by ${Math.abs(stats.gainPercent).toFixed(2)}%.`}
-                    {' '}The asset concentration offers direct exposure, though sector balancing is recommended to lower risk.
-                  </p>
+              
+              {aiLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-4 bg-black">
+                  <Loader2 className="w-8 h-8 animate-spin text-white" />
+                  <p className="text-white/40 text-sm">Analyzing portfolio positions...</p>
                 </div>
-                <div className="border border-white/5 p-6 bg-black">
-                  <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Recommendations</h3>
-                  <ul className="space-y-2 text-white/80 text-sm pl-4 list-disc">
-                    <li>Consider diversifying across defensive sectors to decrease correlation and sector volatility.</li>
-                    <li>Utilize dollar-cost averaging when initiating new equity nodes.</li>
-                    <li>Evaluate highest performing nodes for partial profit reallocation.</li>
-                  </ul>
+              ) : aiRecs ? (
+                <div className="space-y-6">
+                  <div className="border border-white/5 p-6 bg-black">
+                    <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Overall Assessment</h3>
+                    <p className="text-white/80 leading-relaxed text-sm">
+                      {aiRecs.overallAssessment}
+                    </p>
+                  </div>
+                  <div className="border border-white/5 p-6 bg-black">
+                    <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Allocation & Sector Advice</h3>
+                    <p className="text-white/80 leading-relaxed text-sm">
+                      {aiRecs.allocationAdvice}
+                    </p>
+                  </div>
+                  <div className="border border-white/5 p-6 bg-black">
+                    <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Recommendations</h3>
+                    <div className="space-y-4">
+                      {aiRecs.recommendations && aiRecs.recommendations.length > 0 ? (
+                        aiRecs.recommendations.map((rec, idx) => (
+                          <div key={idx} className="border-b border-white/5 pb-3 last:border-0 last:pb-0">
+                            <div className="flex justify-between items-start mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-white">{rec.ticker}</span>
+                                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 border ${
+                                  rec.action === 'buy' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                  rec.action === 'sell' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                  rec.action === 'trim' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                  'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                }`}>
+                                  {rec.action}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-white/40 block">Current &rarr; Target Weight</span>
+                                <span className="text-xs text-white">{rec.currentWeight}% &rarr; {rec.suggestedWeight}%</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-white/60 leading-relaxed">{rec.reasoning}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-white/40 text-xs">No specific recommendations for these assets.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="border border-white/5 p-6 bg-black">
-                  <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Risk Analysis</h3>
-                  <p className="text-white/80 leading-relaxed text-sm">
-                    Portfolio risk score: <span className="text-white">Medium</span>.
-                    Volatility is currently tied to stock selection parameters. Diversified bonds or index ETFs could decrease structural correlation.
-                  </p>
-                </div>
-              </div>
+              ) : (
+                <div className="text-center py-6 text-white/40">No recommendations available.</div>
+              )}
+
               <button
                 onClick={() => setShowAIAnalysis(false)}
                 className="w-full mt-8 px-6 py-3 border border-white/20 bg-transparent text-white text-sm tracking-wide hover:bg-white/5 transition-all cursor-pointer"
@@ -705,7 +793,12 @@ function Portfolio() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-white/5">
             {portfolios.map((portfolio) => {
-              const stats = calculateStats(portfolio);
+              const stats = {
+                totalValue: portfolio.total_value || 0,
+                totalGain: portfolio.total_gain_loss || 0,
+                gainPercent: portfolio.total_gain_loss_pct || 0,
+                holdingsCount: portfolio.holdings_count || 0
+              };
 
               return (
                 <motion.div
@@ -736,7 +829,7 @@ function Portfolio() {
                       <div>
                         <p className="text-xs text-white/40 mb-1 tracking-wider uppercase">Total Value</p>
                         <p className="text-2xl text-white font-light">
-                          ${stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {convertAndFormat(stats.totalValue)}
                         </p>
                       </div>
 
@@ -744,7 +837,7 @@ function Portfolio() {
                         <p className="text-xs text-white/40 mb-1 tracking-wider uppercase">Total Gain/Loss</p>
                         <div className="flex items-center gap-2">
                           <p className={`text-lg ${stats.totalGain >= 0 ? 'text-white' : 'text-white/60'}`}>
-                            {stats.totalGain >= 0 ? '+' : ''}{stats.totalGain.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {stats.totalGain >= 0 ? '+' : '-'}{convertAndFormat(Math.abs(stats.totalGain))}
                           </p>
                           <span className={`text-sm ${stats.gainPercent >= 0 ? 'text-white/60' : 'text-white/40'}`}>
                             ({stats.gainPercent >= 0 ? '+' : ''}{stats.gainPercent.toFixed(2)}%)

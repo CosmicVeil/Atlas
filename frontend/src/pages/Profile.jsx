@@ -1,10 +1,12 @@
 import { useAuth } from '../context/AuthContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { User, LogOut } from 'lucide-react';
+import { User, LogOut, Settings } from 'lucide-react';
 
 function Profile() {
   const { token, email, logout } = useAuth();
+  const { currency, setCurrency, EXCHANGE_RATES } = useCurrency();
   const navigate = useNavigate();
 
   function handleLogout() {
@@ -63,6 +65,27 @@ function Profile() {
                 </>
               )}
             </p>
+          </div>
+          <div className="border border-white/5 p-4 bg-black/40">
+            <p className="text-xs text-white/40 tracking-wider uppercase mb-2 flex items-center gap-1.5">
+              <Settings className="w-3.5 h-3.5" />
+              Display Currency
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {Object.keys(EXCHANGE_RATES).map((curr) => (
+                <button
+                  key={curr}
+                  onClick={() => setCurrency(curr)}
+                  className={`px-2.5 py-1 text-[11px] border transition-all cursor-pointer ${
+                    currency === curr
+                      ? 'bg-white text-black border-white'
+                      : 'bg-transparent text-white/60 border-white/20 hover:text-white hover:border-white/40'
+                  }`}
+                >
+                  {curr} ({EXCHANGE_RATES[curr].symbol})
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

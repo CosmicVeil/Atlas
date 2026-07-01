@@ -10,6 +10,9 @@ class Portfolio(db.Model):
     # this lets you do portfolio.holdings to get all its holdings
     holdings = db.relationship('Holding', backref='portfolio', lazy=True, cascade='all, delete-orphan')
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def to_dict(self):
         return {
             'id': self.id,

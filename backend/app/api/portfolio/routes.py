@@ -36,7 +36,28 @@ def get_portfolio(portfolio_id):
 def get_portfolios():
     user_id = get_jwt_identity()
     portfolios = Portfolio.query.filter_by(user_id=user_id).all()
-    return jsonify([p.to_dict() for p in portfolios])
+    
+    from services import market_data
+    result = []
+    for p in portfolios:
+        p_dict = p.to_dict()
+        total_invested = 0
+        total_value = 0
+        for holding in p.holdings:
+            quote = market_data.get_quote(holding.symbol)
+            current_price = quote['price'] if quote else holding.buy_price
+            total_invested += holding.shares * holding.buy_price
+            total_value += holding.shares * current_price
+            
+        p_dict['holdings_count'] = len(p.holdings)
+        p_dict['total_invested'] = round(total_invested, 2)
+        p_dict['total_value'] = round(total_value, 2)
+        p_dict['total_gain_loss'] = round(total_value - total_invested, 2)
+        p_dict['total_gain_loss_pct'] = round(((total_value - total_invested) / total_invested * 100), 2) if total_invested > 0 else 0.0
+        
+        result.append(p_dict)
+        
+    return jsonify(result)
 
 
 @portfolio_bp.route('/<int:portfolio_id>', methods=['PUT'])

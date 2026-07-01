@@ -1,5 +1,6 @@
 from app.extensions import db
 from datetime import datetime
+import json
 
 class Stock(db.Model):
     __tablename__ = 'stocks'
@@ -93,6 +94,19 @@ class Stock(db.Model):
     latest_quarter = db.Column(db.String(20))
     last_updated = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # --- AI Analysis ---
+    ai_recommendation = db.Column(db.String(20))
+    ai_confidence = db.Column(db.Integer)
+    ai_summary = db.Column(db.Text)
+    ai_pros = db.Column(db.Text)
+    ai_cons = db.Column(db.Text)
+    ai_risk_factors = db.Column(db.Text)
+    ai_target_price = db.Column(db.Float)
+    ai_prediction = db.Column(db.String(20))
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def is_stale(self, hours=24):
         """Returns True if data hasn't been refreshed in X hours"""
         if not self.last_updated:
@@ -180,6 +194,16 @@ class Stock(db.Model):
             'fiscal_year_end': self.fiscal_year_end,
             'latest_quarter': self.latest_quarter,
             'last_updated': self.last_updated.isoformat() if self.last_updated else None,
+
+            # AI Analysis
+            'ai_recommendation': self.ai_recommendation,
+            'ai_confidence': self.ai_confidence,
+            'ai_summary': self.ai_summary,
+            'ai_pros': json.loads(self.ai_pros) if self.ai_pros else [],
+            'ai_cons': json.loads(self.ai_cons) if self.ai_cons else [],
+            'ai_risk_factors': json.loads(self.ai_risk_factors) if self.ai_risk_factors else [],
+            'ai_target_price': self.ai_target_price,
+            'ai_prediction': self.ai_prediction,
         }
 
         # Dynamically append description only if explicitly requested
