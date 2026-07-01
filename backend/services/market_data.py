@@ -9,7 +9,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 CSV_PATH = os.path.join(DATA_DIR, 'stock_info.csv')
 
-# Replace with a real Alpha Vantage key. "demo" only works for IBM/MSFT etc.
 API_KEY = os.environ.get('ALPHA_VANTAGE_KEY')
 BASE_URL = 'https://www.alphavantage.co/query'
 
@@ -69,7 +68,6 @@ def _save_to_cache(data):
         writer.writerows(cache)
 
 
-# ── Alpha Vantage API helpers ──
 
 def get_quote(symbol):
     """Fetch current price, change, volume."""
@@ -154,7 +152,6 @@ def get_full_stock_info(symbol):
     return result
 
 
-# ── Bulk collection (build CSV over days) ──
 
 def write_market_data():
     """
@@ -176,7 +173,6 @@ def read_market_data():
     return _load_cache()
 
 
-# ── S&P 500 list helper ──
 
 def getNamesOfStocks():
     """Return the list of S&P 500 tickers from constituents.csv."""

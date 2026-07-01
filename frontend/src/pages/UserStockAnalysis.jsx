@@ -1,448 +1,458 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
+import { useState, useEffect, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ScrollArea } from "../components/ui/scroll-area";
-import { Separator } from "../components/ui/separator";
-import { Alert, AlertDescription } from "../components/ui/alert";
+import { Badge } from "../components/ui/badge";
+import { useAuth } from "../context/AuthContext";
+import { getStockDetail, getAllStocks } from "../api/stockData";
 import {
   Search,
   TrendingUp,
   TrendingDown,
-  Brain,
-  CheckCircle2,
-  XCircle,
+  BarChart3,
+  DollarSign,
+  Activity,
+  Building2,
+  Hash,
   Loader2,
   AlertCircle,
-  BarChart3,
-  Clock
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  LayoutList,
+  Table2
 } from "lucide-react";
 
-// Mock function - in production this would call Claude API
-const analyzeStock = async (ticker) => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
+const TABS = [
+  { key: "search", label: "Search", icon: Search },
+  { key: "browse", label: "Browse", icon: LayoutList },
+];
 
-  // Mock data - replace with actual Claude API call
-  const mockAnalyses = {
-    "AAPL": {
-      ticker: "AAPL",
-      companyName: "Apple Inc.",
-      currentPrice: 187.45,
-      prediction: "bullish",
-      recommendation: "buy",
-      confidence: 82,
-      targetPrice: 210.00,
-      timeframe: "6-12 months",
-      summary: "Apple maintains strong fundamentals with robust iPhone sales, growing services revenue, and a healthy ecosystem. The company's focus on AI integration and Vision Pro launch presents new growth opportunities. However, China market risks and regulatory pressures remain concerns.",
-      pros: [
-        "Services revenue growing at 15% YoY, providing recurring income stream",
-        "iPhone 15 adoption strong despite mature smartphone market",
-        "Vision Pro entering new spatial computing category with first-mover advantage",
-        "Massive cash position ($162B) enables strategic flexibility",
-        "Brand loyalty and ecosystem lock-in provide competitive moat",
-        "AI integration across product line (Apple Intelligence) driving upgrade cycle"
-      ],
-      cons: [
-        "Heavy dependence on iPhone sales (52% of revenue)",
-        "China geopolitical risks affecting supply chain and market access",
-        "EU regulatory pressure on App Store and USB-C mandate",
-        "Limited near-term growth catalysts in core hardware",
-        "Premium pricing strategy may face headwinds in economic downturn",
-        "Vision Pro adoption uncertain at $3,500 price point"
-      ],
-      riskFactors: [
-        "Regulatory scrutiny in multiple jurisdictions",
-        "Supply chain concentration in China/Taiwan",
-        "Market saturation in developed countries"
-      ],
-      analyzedAt: new Date().toISOString()
-    },
-    "TSLA": {
-      ticker: "TSLA",
-      companyName: "Tesla Inc.",
-      currentPrice: 245.67,
-      prediction: "neutral",
-      recommendation: "hold",
-      confidence: 68,
-      targetPrice: 265.00,
-      timeframe: "6-12 months",
-      summary: "Tesla faces a transitional period with automotive margin pressure offset by energy storage growth. FSD development progressing but commercialization timeline uncertain. New models needed to reignite volume growth. High volatility expected.",
-      pros: [
-        "Energy storage deployments up 125% YoY, becoming significant revenue driver",
-        "FSD Beta improving rapidly, potential for high-margin software revenue",
-        "Supercharger network opening to competitors creates new revenue stream",
-        "Manufacturing efficiency improvements reducing cost per vehicle",
-        "Cybertruck production ramping, entering lucrative truck market",
-        "Strong brand recognition and first-mover advantage in premium EVs"
-      ],
-      cons: [
-        "Automotive gross margins declining (18.2% vs 25% historical)",
-        "Increased competition from legacy automakers and Chinese EVs",
-        "Price cuts eroding brand premium perception",
-        "Regulatory investigation into Autopilot safety",
-        "CEO attention divided across multiple ventures",
-        "Valuation remains stretched relative to traditional automakers"
-      ],
-      riskFactors: [
-        "Execution risk on new model launches",
-        "Key person dependency on Elon Musk",
-        "EV incentive policy changes"
-      ],
-      analyzedAt: new Date().toISOString()
-    },
-    "NVDA": {
-      ticker: "NVDA",
-      companyName: "NVIDIA Corporation",
-      currentPrice: 892.45,
-      prediction: "bullish",
-      recommendation: "strong_buy",
-      confidence: 91,
-      targetPrice: 1150.00,
-      timeframe: "6-12 months",
-      summary: "NVIDIA is the clear winner in AI infrastructure with unmatched GPU technology and CUDA software moat. Data center growth remains exceptional with multi-year AI buildout cycle ahead. Near-term supply constraints limiting even stronger performance.",
-      pros: [
-        "Data center revenue up 217% YoY driven by AI chip demand",
-        "H100/H200 chips have 6+ month wait times, indicating sustained demand",
-        "CUDA software ecosystem creates massive switching costs",
-        "Gross margins expanding to 70%+ on favorable product mix",
-        "Diversified customer base across cloud providers and enterprises",
-        "AI model training and inference markets both expanding rapidly",
-        "New Blackwell architecture launching with performance improvements"
-      ],
-      cons: [
-        "Valuation at 35x forward earnings, leaving little room for disappointment",
-        "Customer concentration risk (Microsoft, Meta, Amazon)",
-        "AMD and custom silicon (Google TPU, Amazon Trainium) increasing competition",
-        "Export restrictions to China limiting addressable market",
-        "Cyclical gaming and crypto mining revenue streams",
-        "Supply chain dependencies on TSMC"
-      ],
-      riskFactors: [
-        "AI bubble risk if enterprise ROI fails to materialize",
-        "Geopolitical tensions affecting chip exports",
-        "Technology disruption from quantum or alternative computing"
-      ],
-      analyzedAt: new Date().toISOString()
-    }
-  };
+/* ─────────────────── helpers ─────────────────── */
 
-  const upperTicker = ticker.toUpperCase();
+function formatCurrency(val) {
+  if (!val || val === "None" || val === "null") return "—";
+  const num = parseFloat(val);
+  if (isNaN(num)) return val;
+  if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
+  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+  return `$${num.toFixed(2)}`;
+}
 
-  if (mockAnalyses[upperTicker]) {
-    return mockAnalyses[upperTicker];
-  }
+function formatNumberRaw(val) {
+  if (!val || val === "None" || val === "null") return "—";
+  const num = parseFloat(val);
+  if (isNaN(num)) return val;
+  return num.toLocaleString();
+}
 
-  // Generic response for tickers not in mock data
-  return {
-    ticker: upperTicker,
-    companyName: `${upperTicker} Corporation`,
-    currentPrice: 0,
-    prediction: "neutral",
-    recommendation: "hold",
-    confidence: 50,
-    targetPrice: 0,
-    timeframe: "6-12 months",
-    summary: `Analysis for ${upperTicker} is currently unavailable. Please try AAPL, TSLA, or NVDA for demo purposes.`,
-    pros: ["Data not available"],
-    cons: ["Data not available"],
-    riskFactors: ["Data not available"],
-    analyzedAt: new Date().toISOString()
-  };
-};
+/* ─────────────────── component ─────────────────── */
 
 function UserStockAnalysis() {
-  const [ticker, setTicker] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [analysis, setAnalysis] = useState(null);
-  const [error, setError] = useState("");
+  const { token } = useAuth();
+  const [activeTab, setActiveTab] = useState("search");
 
-  const handleAnalyze = async () => {
+  /* Search tab state */
+  const [ticker, setTicker] = useState("");
+  const [stock, setStock] = useState(null);
+  const [isLoadingSearch, setIsLoadingSearch] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
+  /* Browse tab state */
+  const [allStocks, setAllStocks] = useState([]);
+  const [isLoadingBrowse, setIsLoadingBrowse] = useState(false);
+  const [browseError, setBrowseError] = useState("");
+  const [filterText, setFilterText] = useState("");
+  const [sortConfig, setSortConfig] = useState({ key: "symbol", direction: "asc" });
+
+  /* ── Search tab handlers ── */
+
+  const handleSearch = async () => {
     if (!ticker.trim()) {
-      setError("Please enter a stock ticker symbol");
+      setSearchError("Please enter a stock ticker symbol");
       return;
     }
-
-    setError("");
-    setIsLoading(true);
+    setSearchError("");
+    setIsLoadingSearch(true);
+    setStock(null);
 
     try {
-      const result = await analyzeStock(ticker.trim());
-      setAnalysis(result);
+      const data = await getStockDetail(ticker.trim(), token);
+      if (data.error) {
+        setSearchError(data.error);
+      } else {
+        setStock(data);
+      }
     } catch (err) {
-      setError("Failed to analyze stock. Please try again.");
+      setSearchError("Failed to fetch stock data. Please try again.");
     } finally {
-      setIsLoading(false);
+      setIsLoadingSearch(false);
     }
   };
 
-  const getPredictionBadge = (prediction) => {
-    const variants = {
-      bullish: {
-        icon: TrendingUp,
-        color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-        label: "BULLISH"
-      },
-      bearish: {
-        icon: TrendingDown,
-        color: "bg-red-500/20 text-red-400 border-red-500/30",
-        label: "BEARISH"
-      },
-      neutral: {
-        icon: BarChart3,
-        color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-        label: "NEUTRAL"
+  /* ── Browse tab handlers ── */
+
+  const fetchAllStocks = async () => {
+    setIsLoadingBrowse(true);
+    setBrowseError("");
+    try {
+      const res = await getAllStocks(token);
+      if (res.stocks) {
+        setAllStocks(res.stocks);
+      } else {
+        setBrowseError("No stock data available.");
       }
-    };
-
-    const config = variants[prediction] || variants.neutral;
-    const Icon = config.icon;
-
-    return (
-      <Badge className={`${config.color} border gap-1`}>
-        <Icon className="w-3 h-3" />
-        {config.label}
-      </Badge>
-    );
+    } catch (err) {
+      setBrowseError("Failed to load stock list.");
+    } finally {
+      setIsLoadingBrowse(false);
+    }
   };
 
-  const getRecommendationBadge = (recommendation) => {
-    const variants = {
-      strong_buy: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-      buy: "bg-green-500/20 text-green-400 border-green-500/30",
-      hold: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-      sell: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-      strong_sell: "bg-red-500/20 text-red-400 border-red-500/30"
-    };
+  useEffect(() => {
+    if (activeTab === "browse") {
+      fetchAllStocks();
+    }
+  }, [activeTab]);
 
-    return (
-      <Badge className={`${variants[recommendation]} border`}>
-        {recommendation.replace("_", " ").toUpperCase()}
-      </Badge>
-    );
+  /* ── Sorting & Filtering ── */
+
+  const handleSort = (key) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+    }));
   };
+
+  const filteredAndSorted = useMemo(() => {
+    let data = [...allStocks];
+
+    // Filter
+    if (filterText.trim()) {
+      const q = filterText.toUpperCase();
+      data = data.filter(
+        (s) =>
+          (s.symbol || "").toUpperCase().includes(q) ||
+          (s.name || "").toUpperCase().includes(q) ||
+          (s.sector || "").toUpperCase().includes(q) ||
+          (s.industry || "").toUpperCase().includes(q)
+      );
+    }
+
+    // Sort
+    data.sort((a, b) => {
+      const aVal = a[sortConfig.key];
+      const bVal = b[sortConfig.key];
+      const aNum = parseFloat(aVal);
+      const bNum = parseFloat(bVal);
+      const bothNumeric = !isNaN(aNum) && !isNaN(bNum) && aVal !== "" && bVal !== "";
+
+      let cmp = 0;
+      if (bothNumeric) {
+        cmp = aNum - bNum;
+      } else {
+        cmp = String(aVal || "").localeCompare(String(bVal || ""));
+      }
+      return sortConfig.direction === "asc" ? cmp : -cmp;
+    });
+
+    return data;
+  }, [allStocks, filterText, sortConfig]);
+
+  /* ── column definitions for table ── */
+
+  const columns = [
+    { key: "symbol", label: "Symbol", width: "w-20" },
+    { key: "name", label: "Name", width: "w-48" },
+    { key: "price", label: "Price", width: "w-24" },
+    { key: "change_percent", label: "Change %", width: "w-24" },
+    { key: "volume", label: "Volume", width: "w-24" },
+    { key: "sector", label: "Sector", width: "w-32" },
+    { key: "market_cap", label: "Market Cap", width: "w-28" },
+    { key: "pe_ratio", label: "P/E", width: "w-20" },
+    { key: "eps", label: "EPS", width: "w-20" },
+  ];
 
   return (
-    <div className="min-h-screen bg-black text-white p-8 pt-28">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen bg-black text-white p-8 pt-24">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="space-y-2">
+        <div>
+          <h1 className="text-4xl font-light tracking-tight mb-2">Stock Data</h1>
           <p className="text-white/40 text-sm">
-            Enter any stock ticker to get an AI-powered analysis with predictions, pros, cons, and recommendations
+            Look up any publicly traded company by ticker symbol.
           </p>
         </div>
 
-        {/* Search Input */}
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-light">
-              <Brain className="w-5 h-5 text-white" />
-              Analyze a Stock
-            </CardTitle>
-            <CardDescription className="text-white/40">
-              Enter a stock ticker symbol (e.g., AAPL, TSLA, NVDA) for instant AI analysis.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-3">
-              <Input
-                placeholder="Enter stock ticker (e.g., AAPL)"
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
-                className="text-lg bg-white/5 border-white/10 text-white focus:outline-none focus:border-white/30"
-                disabled={isLoading}
-              />
-              <Button
-                onClick={handleAnalyze}
-                disabled={isLoading}
-                className="gap-2 px-8 bg-white text-black hover:bg-white/90 cursor-pointer font-medium"
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-white/10">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium tracking-wide transition-colors border-b-2 ${
+                  isActive
+                    ? "border-white text-white"
+                    : "border-transparent text-white/40 hover:text-white/70"
+                }`}
               >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-black" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-4 h-4 text-black" />
-                    Analyze
-                  </>
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ───────────── Search Tab ───────────── */}
+        {activeTab === "search" && (
+          <div className="space-y-6">
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 font-light text-lg">
+                  <Search className="w-5 h-5 text-white" />
+                  Search Ticker
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-3">
+                  <Input
+                    placeholder="e.g. AAPL, TSLA, IBM"
+                    value={ticker}
+                    onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                    className="text-lg bg-white/5 border-white/10 text-white focus:outline-none focus:border-white/30"
+                    disabled={isLoadingSearch}
+                  />
+                  <Button
+                    onClick={handleSearch}
+                    disabled={isLoadingSearch}
+                    className="gap-2 px-8 bg-white text-black hover:bg-white/90 cursor-pointer font-medium"
+                  >
+                    {isLoadingSearch ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4" />
+                        Lookup
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {searchError && (
+                  <div className="mt-4 flex items-center gap-2 text-red-400 text-sm bg-red-950/20 border border-red-500/20 p-3 rounded-md">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {searchError}
+                  </div>
                 )}
-              </Button>
-            </div>
-            {error && (
-              <Alert variant="destructive" className="mt-4 bg-red-950/20 text-red-400 border-red-500/30">
-                <AlertCircle className="h-4 w-4 text-red-400" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Analysis Results */}
-        {analysis && (
-          <ScrollArea className="h-[calc(100vh-350px)]">
-            <div className="space-y-4 pr-4">
-              {/* Header Card */}
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <CardTitle className="text-3xl font-light">{analysis.ticker}</CardTitle>
-                        {getPredictionBadge(analysis.prediction)}
-                        {getRecommendationBadge(analysis.recommendation)}
+            {stock && (
+              <div className="space-y-6">
+                {/* Detail Card */}
+                <Card className="bg-card border-border">
+                  <CardHeader>
+                    <div className="flex items-start justify-between flex-wrap gap-4">
+                      <div>
+                        <div className="flex items-center gap-3 mb-1">
+                          <Badge variant="outline" className="text-white border-white/20 font-mono tracking-wider">
+                            {stock.symbol}
+                          </Badge>
+                          <span className="text-white/30 text-sm">{stock.sector}</span>
+                        </div>
+                        <h2 className="text-3xl font-light">{stock.name || stock.symbol}</h2>
                       </div>
-                      <CardDescription className="text-base text-white/40">
-                        {analysis.companyName}
-                      </CardDescription>
-                    </div>
-                    {analysis.currentPrice > 0 && (
                       <div className="text-right">
-                        <div className="text-3xl font-light">${analysis.currentPrice.toFixed(2)}</div>
-                        <div className="text-sm text-white/40">Current Price</div>
+                        <div className="text-4xl font-light">
+                          ${parseFloat(stock.price || 0).toFixed(2)}
+                        </div>
+                        <div className={`text-sm font-medium flex items-center justify-end gap-1 mt-1 ${parseFloat(stock.change || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {parseFloat(stock.change || 0) >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                          {parseFloat(stock.change || 0) >= 0 ? '+' : ''}{parseFloat(stock.change || 0).toFixed(2)} ({stock.change_percent || '0%'})
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Key Metrics */}
-                  <div className="grid grid-cols-3 gap-6">
-                    <div className="space-y-1">
-                      <div className="text-sm text-white/40">Confidence</div>
-                      <div className="text-2xl font-light">{analysis.confidence}%</div>
                     </div>
-                    {analysis.targetPrice > 0 && (
-                      <div className="space-y-1">
-                        <div className="text-sm text-white/40">Target Price</div>
-                        <div className="text-2xl font-light text-white">${analysis.targetPrice.toFixed(2)}</div>
-                      </div>
-                    )}
-                    <div className="space-y-1">
-                      <div className="text-sm text-white/40 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        Timeframe
-                      </div>
-                      <div className="text-xl font-light">{analysis.timeframe}</div>
-                    </div>
-                  </div>
-
-                  <Separator className="bg-white/5" />
-
-                  {/* AI Summary */}
-                  <div className="space-y-3">
-                    <h3 className="flex items-center gap-2 text-lg font-light">
-                      <Brain className="w-5 h-5 text-white" />
-                      AI Analysis Summary
-                    </h3>
-                    <p className="text-white/60 leading-relaxed text-sm">
-                      {analysis.summary}
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-white/50 text-sm leading-relaxed">
+                      {stock.description || "No description available."}
                     </p>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
 
-              {/* Pros Card */}
-              <Card className="bg-card border-border border-l-4 border-l-emerald-500">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-emerald-400 font-light">
-                    <CheckCircle2 className="w-5 h-5" />
-                    Pros & Strengths
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {analysis.pros.map((pro, idx) => (
-                      <li key={idx} className="flex items-start gap-3">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-white/60 text-sm">{pro}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <MetricCard icon={DollarSign} label="Market Cap" value={formatCurrency(stock.market_cap)} />
+                  <MetricCard icon={Activity} label="P/E Ratio" value={stock.pe_ratio || "—"} />
+                  <MetricCard icon={BarChart3} label="Volume" value={formatNumberRaw(stock.volume)} />
+                  <MetricCard icon={Hash} label="EPS" value={stock.eps || "—"} />
+                  <MetricCard icon={TrendingUp} label="52-Week High" value={`$${stock.week_52_high || "—"}`} />
+                  <MetricCard icon={TrendingDown} label="52-Week Low" value={`$${stock.week_52_low || "—"}`} />
+                  <MetricCard icon={DollarSign} label="Dividend Yield" value={stock.dividend_yield ? `${(parseFloat(stock.dividend_yield) * 100).toFixed(2)}%` : "—"} />
+                  <MetricCard icon={Building2} label="Industry" value={stock.industry || "—"} />
+                </div>
+              </div>
+            )}
 
-              {/* Cons Card */}
-              <Card className="bg-card border-border border-l-4 border-l-red-500">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-red-400 font-light">
-                    <XCircle className="w-5 h-5" />
-                    Cons & Risks
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {analysis.cons.map((con, idx) => (
-                      <li key={idx} className="flex items-start gap-3">
-                        <XCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-white/60 text-sm">{con}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Risk Factors */}
-              <Card className="bg-card border-border border-l-4 border-l-yellow-500">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-yellow-400 font-light">
-                    <AlertCircle className="w-5 h-5" />
-                    Key Risk Factors
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {analysis.riskFactors.map((risk, idx) => (
-                      <li key={idx} className="flex items-start gap-3">
-                        <AlertCircle className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-white/60 text-sm">{risk}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Disclaimer */}
-              <Alert className="bg-white/5 border border-white/10 text-white/60">
-                <AlertCircle className="h-4 w-4 text-white" />
-                <AlertDescription className="text-xs">
-                  This analysis is generated by AI and should not be considered financial advice.
-                  Always conduct your own research and consult with a financial advisor before making investment decisions.
-                  Analysis generated at: {new Date(analysis.analyzedAt).toLocaleString()}
-                </AlertDescription>
-              </Alert>
-            </div>
-          </ScrollArea>
+            {!stock && !isLoadingSearch && (
+              <div className="text-center py-20 text-white/30 text-sm">
+                Enter a ticker above to get started.
+              </div>
+            )}
+          </div>
         )}
 
-        {/* Empty State */}
-        {!analysis && !isLoading && (
-          <Card className="bg-card border-border border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <Brain className="w-16 h-16 text-white/40 mb-4" />
-              <h3 className="text-xl mb-2 font-light">Ready to Analyze</h3>
-              <p className="text-white/40 max-w-md text-sm">
-                Enter a stock ticker above to get started with AI-powered analysis including predictions,
-                pros, cons, and detailed recommendations.
-              </p>
-              <div className="flex gap-2 mt-6">
-                <Badge variant="outline" className="cursor-pointer hover:bg-white/5 text-white/60 border-white/20 px-3 py-1" onClick={() => setTicker("AAPL")}>
-                  Try AAPL
-                </Badge>
-                <Badge variant="outline" className="cursor-pointer hover:bg-white/5 text-white/60 border-white/20 px-3 py-1" onClick={() => setTicker("TSLA")}>
-                  Try TSLA
-                </Badge>
-                <Badge variant="outline" className="cursor-pointer hover:bg-white/5 text-white/60 border-white/20 px-3 py-1" onClick={() => setTicker("NVDA")}>
-                  Try NVDA
-                </Badge>
+        {/* ───────────── Browse Tab ───────────── */}
+        {activeTab === "browse" && (
+          <div className="space-y-4">
+            {/* Filter controls */}
+            <div className="flex gap-3 items-center">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <Input
+                  placeholder="Filter by symbol, name, sector, or industry…"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  className="pl-10 bg-white/5 border-white/10 text-white focus:outline-none focus:border-white/30"
+                />
               </div>
-            </CardContent>
-          </Card>
+              <Button
+                onClick={fetchAllStocks}
+                disabled={isLoadingBrowse}
+                className="gap-2 bg-white text-black hover:bg-white/90 cursor-pointer font-medium"
+              >
+                {isLoadingBrowse ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Table2 className="w-4 h-4" />
+                )}
+                Refresh
+              </Button>
+            </div>
+
+            {/* Table */}
+            <div className="border border-white/10 rounded-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-white/[0.02]">
+                      {columns.map((col) => (
+                        <th
+                          key={col.key}
+                          onClick={() => handleSort(col.key)}
+                          className={`text-left px-4 py-3 text-xs uppercase tracking-wider text-white/40 font-medium cursor-pointer hover:text-white/60 transition-colors select-none ${col.width}`}
+                        >
+                          <div className="flex items-center gap-1">
+                            {col.label}
+                            {sortConfig.key === col.key ? (
+                              sortConfig.direction === "asc" ? (
+                                <ArrowUp className="w-3 h-3" />
+                              ) : (
+                                <ArrowDown className="w-3 h-3" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="w-3 h-3 opacity-30" />
+                            )}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredAndSorted.length === 0 ? (
+                      <tr>
+                        <td colSpan={columns.length} className="px-4 py-12 text-center text-white/30">
+                          {isLoadingBrowse ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Loading stocks…
+                            </div>
+                          ) : browseError ? (
+                            <span className="text-red-400">{browseError}</span>
+                          ) : (
+                            "No stocks match your filter."
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredAndSorted.map((s, idx) => {
+                        const price = parseFloat(s.price || 0);
+                        const change = parseFloat(s.change || 0);
+                        const changePct = s.change_percent || "0%";
+                        return (
+                          <tr
+                            key={idx}
+                            className="hover:bg-white/[0.02] transition-colors"
+                          >
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className="font-mono text-white border-white/20">
+                                {s.symbol}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-white/80 max-w-xs truncate">
+                              {s.name || "—"}
+                            </td>
+                            <td className="px-4 py-3 font-mono">
+                              ${!isNaN(price) ? price.toFixed(2) : "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`flex items-center gap-1 ${change >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                {changePct}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-white/60">
+                              {formatNumberRaw(s.volume)}
+                            </td>
+                            <td className="px-4 py-3 text-white/60">{s.sector || "—"}</td>
+                            <td className="px-4 py-3 text-white/60">
+                              {formatCurrency(s.market_cap)}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-white/60">
+                              {s.pe_ratio || "—"}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-white/60">
+                              {s.eps || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Count */}
+            <div className="text-white/30 text-xs text-right">
+              {filteredAndSorted.length} of {allStocks.length} stocks shown
+            </div>
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+/* ─────────────────── subcomponents ─────────────────── */
+
+function MetricCard({ icon: Icon, label, value }) {
+  return (
+    <Card className="bg-card border-border">
+      <CardContent className="p-6 flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider">
+          <Icon className="w-4 h-4" />
+          {label}
+        </div>
+        <div className="text-xl font-light text-white">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
 
