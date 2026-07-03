@@ -17,10 +17,10 @@ def get_stocks():
     sort_by = request.args.get('sort_by', 'symbol')  # Default sort by symbol
     order = request.args.get('order', 'asc')        # Default ascending
     
-    # 3. Pagination (Crucial for large tabular data)
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 25, type=int)
- 
+    # 3. Pagination disabled for full browse table (small dataset)
+    # page = request.args.get('page', 1, type=int)
+    # per_page = request.args.get('per_page', 25, type=int)
+
     # Start building the base query
     query = Stock.query
  
@@ -59,14 +59,12 @@ def get_stocks():
     else:
         query = query.order_by(column_to_sort.asc())
 
-    # Execute with Pagination
-    paginated_stocks = query.paginate(page=page, per_page=per_page, error_out=False)
+    # Return full list (no pagination)
+    all_stocks = query.all()
 
     return jsonify({
-        'stocks': [stock.to_dict(include_description=False) for stock in paginated_stocks.items],
-        'total_pages': paginated_stocks.pages,
-        'current_page': paginated_stocks.page,
-        'total_items': paginated_stocks.total
+        'stocks': [stock.to_dict(include_description=True) for stock in all_stocks],
+        'total_items': len(all_stocks)
     }), 200
 
 

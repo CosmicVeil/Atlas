@@ -21,7 +21,9 @@ import {
   ArrowUp,
   ArrowDown,
   LayoutList,
-  Table2
+  Table2,
+  Eye,
+  Info
 } from "lucide-react";
 
 const TABS = [
@@ -118,6 +120,15 @@ function UserStockAnalysis() {
       fetchAllStocks();
     }
   }, [activeTab]);
+
+  /* ── Select stock from browse ── */
+  const handleSelectStock = (stockData) => {
+    setTicker(stockData.symbol);
+    setStock(stockData);
+    setSearchError("");
+    setActiveTab("search");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   /* ── Sorting & Filtering ── */
   const handleSort = (key) => {
@@ -288,16 +299,20 @@ function UserStockAnalysis() {
                   </CardContent>
                 </Card>
 
-                {/* Metrics Grid */}
+                {/* Key Metrics — only fields we reliably get from the API */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <MetricCard icon={DollarSign} label="Market Cap" value={formatVal(stock.market_cap)} />
-                  <MetricCard icon={Activity} label="P/E Ratio" value={stock.pe_ratio || "—"} />
-                  <MetricCard icon={BarChart3} label="Volume" value={formatVal(stock.volume, true)} />
-                  <MetricCard icon={Hash} label="EPS" value={stock.eps || "—"} />
-                  <MetricCard icon={TrendingUp} label="52-Week High" value={formatVal(stock.week_52_high)} />
-                  <MetricCard icon={TrendingDown} label="52-Week Low" value={formatVal(stock.week_52_low)} />
-                  <MetricCard icon={DollarSign} label="Dividend Yield" value={stock.dividend_yield ? `${(parseFloat(stock.dividend_yield) * 100).toFixed(2)}%` : "—"} />
-                  <MetricCard icon={Building2} label="Industry" value={stock.industry || "—"} />
+                  <MetricCard icon={DollarSign} label="Price" value={formatVal(stock.price)} tooltip="Current trading price." />
+                  <MetricCard icon={Activity} label="Change" value={`${parseFloat(stock.change || 0) >= 0 ? '+' : ''}${formatVal(stock.change)}`} tooltip="Dollar change since previous close." />
+                  <MetricCard icon={Activity} label="Change %" value={stock.change_percent || "—"} tooltip="Percentage change since previous close." />
+                  <MetricCard icon={BarChart3} label="Volume" value={formatVal(stock.volume, true)} tooltip="Number of shares traded today." />
+                  <MetricCard icon={DollarSign} label="Previous Close" value={formatVal(stock.previous_close)} tooltip="Closing price from the previous trading day." />
+                  <MetricCard icon={DollarSign} label="Market Cap" value={formatVal(stock.market_cap)} tooltip="Total market value of all outstanding shares." />
+                  <MetricCard icon={Hash} label="P/E Ratio" value={stock.pe_ratio || "—"} tooltip="Price-to-Earnings: what investors pay per $1 of earnings." />
+                  <MetricCard icon={Hash} label="EPS" value={stock.eps || "—"} tooltip="Earnings per share." />
+                  <MetricCard icon={TrendingUp} label="52-Week High" value={formatVal(stock.week_52_high)} tooltip="Highest price over the past 52 weeks." />
+                  <MetricCard icon={TrendingDown} label="52-Week Low" value={formatVal(stock.week_52_low)} tooltip="Lowest price over the past 52 weeks." />
+                  <MetricCard icon={DollarSign} label="Dividend Yield" value={stock.dividend_yield ? `${(parseFloat(stock.dividend_yield) * 100).toFixed(2)}%` : "—"} tooltip="Annual dividend as a percentage of stock price." />
+                  <MetricCard icon={Building2} label="Industry" value={stock.industry || "—"} tooltip="Specific industry within the sector." />
                 </div>
               </div>
             )}
@@ -364,12 +379,13 @@ function UserStockAnalysis() {
                           </div>
                         </th>
                       ))}
+                      <th className="text-left px-4 py-3 text-xs uppercase tracking-wider text-white/40 font-medium w-16 select-none">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {filteredAndSorted.length === 0 ? (
                       <tr>
-                        <td colSpan={columns.length} className="px-4 py-12 text-center text-white/30">
+                        <td colSpan={columns.length + 1} className="px-4 py-12 text-center text-white/30">
                           {isLoadingBrowse ? (
                             <div className="flex items-center justify-center gap-2">
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -390,7 +406,8 @@ function UserStockAnalysis() {
                         return (
                           <tr
                             key={idx}
-                            className="hover:bg-white/[0.02] transition-colors"
+                            onClick={() => handleSelectStock(s)}
+                            className="hover:bg-white/[0.04] transition-colors cursor-pointer"
                           >
                             <td className="px-4 py-3">
                               <Badge variant="outline" className="font-mono text-white border-white/20">
@@ -422,6 +439,18 @@ function UserStockAnalysis() {
                             <td className="px-4 py-3 font-mono text-white/60">
                               {s.eps || "—"}
                             </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectStock(s);
+                                }}
+                                className="text-white/30 hover:text-white transition-colors"
+                                title="View details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })
@@ -443,17 +472,30 @@ function UserStockAnalysis() {
 }
 
 /* ────────────────── subcomponents ────────────────── */
-function MetricCard({ icon: Icon, label, value }) {
+function MetricCard({ icon: Icon, label, value, tooltip }) {
   return (
     <Card className="bg-card border-border">
       <CardContent className="p-6 flex flex-col gap-1">
         <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider">
           <Icon className="w-4 h-4" />
-          {label}
+          <span>{label}</span>
+          {tooltip && (
+            <Info className="w-3 h-3 text-white/20 hover:text-white cursor-help" title={tooltip} />
+          )}
         </div>
         <div className="text-xl font-light text-white">{value}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function SectionHeader({ title, icon: Icon }) {
+  return (
+    <div className="flex items-center gap-2 pt-4">
+      <Icon className="w-5 h-5 text-white/40" />
+      <h3 className="text-lg font-medium text-white/80">{title}</h3>
+      <div className="flex-1 h-px bg-white/10 ml-4" />
+    </div>
   );
 }
 

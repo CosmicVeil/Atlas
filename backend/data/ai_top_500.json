@@ -1,0 +1,251 @@
+{
+  "recommended": [
+    {
+      "ticker": "NVDA",
+      "name": "Nvidia",
+      "price": 197.01,
+      "change": -3.08,
+      "changePercent": -1.54,
+      "recommendation": "strong_buy",
+      "confidence": 72,
+      "reasoning": "Nvidia (NVDA) exhibits a neutral outlook based on its current financial profile. Trading at $197.01 with a P/E ratio of 48.86, the stock demonstrates robust fundamental metrics. We recommend a HOLD stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Semiconductors market.",
+        "Healthy EPS of $3.6 demonstrates core profitability.",
+        "Attractive dividend yield of 3.91% provides passive income stability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "medium",
+      "potentialReturn": 25.0
+    },
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft",
+      "price": 384.23,
+      "change": 11.21,
+      "changePercent": 3.01,
+      "recommendation": "strong_buy",
+      "confidence": 78,
+      "reasoning": "Microsoft (MSFT) exhibits a neutral outlook based on its current financial profile. Trading at $384.23 with a P/E ratio of 22.25, the stock demonstrates robust fundamental metrics. We recommend a HOLD stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Systems Software market.",
+        "Healthy EPS of $6.21 demonstrates core profitability.",
+        "Attractive dividend yield of 3.65% provides passive income stability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": 210.5
+    },
+    {
+      "ticker": "AMD",
+      "name": "Advanced Micro Devices",
+      "price": 551.725,
+      "change": -29.18,
+      "changePercent": -5.02,
+      "recommendation": "buy",
+      "confidence": 83,
+      "reasoning": "Advanced Micro Devices (AMD) exhibits a bullish outlook based on its current financial profile. Trading at $551.725 with a P/E ratio of 10.4, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Semiconductors market.",
+        "Healthy EPS of $30.78 demonstrates core profitability.",
+        "Attractive dividend yield of 1.63% provides passive income stability.",
+        "Relatively low P/E ratio of 10.4 suggests favorable valuation vs. peers."
+      ],
+      "riskLevel": "medium",
+      "potentialReturn": 101.0
+    },
+    {
+      "ticker": "GOOGL",
+      "name": "Alphabet Inc. (Class A)",
+      "price": 359.56,
+      "change": 2.19,
+      "changePercent": 0.61,
+      "recommendation": "buy",
+      "confidence": 83,
+      "reasoning": "Alphabet Inc. (Class A) (GOOGL) exhibits a bullish outlook based on its current financial profile. Trading at $359.56 with a P/E ratio of 14.23, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Interactive Media & Services market.",
+        "Healthy EPS of $35.0 demonstrates core profitability.",
+        "Attractive dividend yield of 3.1% provides passive income stability.",
+        "Relatively low P/E ratio of 14.23 suggests favorable valuation vs. peers."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": -8.6
+    },
+    {
+      "ticker": "AAPL",
+      "name": "Apple Inc.",
+      "price": 295.3,
+      "change": 5.94,
+      "changePercent": 2.05,
+      "recommendation": "buy",
+      "confidence": 74,
+      "reasoning": "Apple Inc. (AAPL) exhibits a bullish outlook based on its current financial profile. Trading at $295.3 with a P/E ratio of 23.5, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Technology Hardware, Storage & Peripherals market.",
+        "Healthy EPS of $8.65 demonstrates core profitability.",
+        "Attractive dividend yield of 3.82% provides passive income stability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": 77.1
+    },
+    {
+      "ticker": "AMZN",
+      "name": "Amazon",
+      "price": 241.72,
+      "change": 3.38,
+      "changePercent": 1.42,
+      "recommendation": "buy",
+      "confidence": 80,
+      "reasoning": "Amazon (AMZN) exhibits a neutral outlook based on its current financial profile. Trading at $241.72 with a P/E ratio of 28.13, the stock demonstrates robust fundamental metrics. We recommend a HOLD stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Broadline Retail market.",
+        "Healthy EPS of $4.24 demonstrates core profitability.",
+        "Attractive dividend yield of 4.89% provides passive income stability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": 141.9
+    },
+    {
+      "ticker": "META",
+      "name": "Meta Platforms",
+      "price": 617.505,
+      "change": 54.22,
+      "changePercent": 9.63,
+      "recommendation": "buy",
+      "confidence": 69,
+      "reasoning": "Meta Platforms (META) exhibits a neutral outlook based on its current financial profile. Trading at $617.505 with a P/E ratio of 45.0, the stock demonstrates robust fundamental metrics. We recommend a HOLD stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Interactive Media & Services market.",
+        "Healthy EPS of $1.29 demonstrates core profitability.",
+        "Attractive dividend yield of 2.08% provides passive income stability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": 886.8
+    },
+    {
+      "ticker": "AVGO",
+      "name": "Broadcom",
+      "price": 370.3,
+      "change": -7.45,
+      "changePercent": -1.97,
+      "recommendation": "buy",
+      "confidence": 77,
+      "reasoning": "Broadcom (AVGO) exhibits a bullish outlook based on its current financial profile. Trading at $370.3 with a P/E ratio of 34.56, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Semiconductors market.",
+        "Healthy EPS of $13.22 demonstrates core profitability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": -7.3
+    },
+    {
+      "ticker": "COST",
+      "name": "Costco",
+      "price": 927.115,
+      "change": -8.36,
+      "changePercent": -0.89,
+      "recommendation": "buy",
+      "confidence": 83,
+      "reasoning": "Costco (COST) exhibits a bullish outlook based on its current financial profile. Trading at $927.115 with a P/E ratio of 25.9, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Consumer Staples Merchandise Retail market.",
+        "Healthy EPS of $2.92 demonstrates core profitability.",
+        "Attractive dividend yield of 3.02% provides passive income stability.",
+        "Strong revenue momentum and market share gains."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": 1368.5
+    },
+    {
+      "ticker": "LLY",
+      "name": "Lilly (Eli)",
+      "price": 1191.275,
+      "change": -8.15,
+      "changePercent": -0.68,
+      "recommendation": "buy",
+      "confidence": 86,
+      "reasoning": "Lilly (Eli) (LLY) exhibits a bullish outlook based on its current financial profile. Trading at $1191.275 with a P/E ratio of 10.45, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Solid competitive position within the Pharmaceuticals market.",
+        "Healthy EPS of $47.67 demonstrates core profitability.",
+        "Attractive dividend yield of 4.43% provides passive income stability.",
+        "Relatively low P/E ratio of 10.45 suggests favorable valuation vs. peers."
+      ],
+      "riskLevel": "low",
+      "potentialReturn": 181.2
+    }
+  ],
+  "worst": [
+    {
+      "ticker": "COIN",
+      "name": "Coinbase",
+      "price": 162.645,
+      "change": 16.46,
+      "changePercent": 11.26,
+      "recommendation": "sell",
+      "confidence": 85,
+      "reasoning": "Coinbase (COIN) exhibits a bullish outlook based on its current financial profile. Trading at $162.645 with a P/E ratio of 33.53, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Subject to macro headwinds and cyclical shifts in the Financials sector.",
+        "Increased R&D and capital expenditure requirements to maintain innovation margins."
+      ],
+      "riskLevel": "high",
+      "potentialReturn": -58.8
+    },
+    {
+      "ticker": "HOOD",
+      "name": "Robinhood Markets",
+      "price": 107.795,
+      "change": 7.52,
+      "changePercent": 7.5,
+      "recommendation": "strong_sell",
+      "confidence": 83,
+      "reasoning": "Robinhood Markets (HOOD) exhibits a bullish outlook based on its current financial profile. Trading at $107.795 with a P/E ratio of 12.63, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Subject to macro headwinds and cyclical shifts in the Financials sector.",
+        "Increased R&D and capital expenditure requirements to maintain innovation margins."
+      ],
+      "riskLevel": "high",
+      "potentialReturn": -69.2
+    },
+    {
+      "ticker": "INTC",
+      "name": "Intel",
+      "price": 128.665,
+      "change": -10.97,
+      "changePercent": -7.86,
+      "recommendation": "sell",
+      "confidence": 81,
+      "reasoning": "Intel (INTC) exhibits a bullish outlook based on its current financial profile. Trading at $128.665 with a P/E ratio of 10.4, the stock demonstrates robust fundamental metrics. We recommend a BUY stance for long term growth.",
+      "keyPoints": [
+        "Subject to macro headwinds and cyclical shifts in the Information Technology sector.",
+        "Increased R&D and capital expenditure requirements to maintain innovation margins."
+      ],
+      "riskLevel": "high",
+      "potentialReturn": -39.1
+    },
+    {
+      "ticker": "DIS",
+      "name": "Walt Disney Company (The)",
+      "price": 97.05,
+      "change": 0.8,
+      "changePercent": 0.83,
+      "recommendation": "sell",
+      "confidence": 78,
+      "reasoning": "Walt Disney Company (The) (DIS) exhibits a neutral outlook based on its current financial profile. Trading at $97.05 with a P/E ratio of 41.6, the stock demonstrates robust fundamental metrics. We recommend a HOLD stance for long term growth.",
+      "keyPoints": [
+        "Subject to macro headwinds and cyclical shifts in the Communication Services sector.",
+        "Increased R&D and capital expenditure requirements to maintain innovation margins.",
+        "High P/E ratio of 41.6 creates a premium valuation risk with high expectations."
+      ],
+      "riskLevel": "high",
+      "potentialReturn": -77.5
+    }
+  ],
+  "lastUpdated": "2026-07-01T12:00:21.058922"
+}
