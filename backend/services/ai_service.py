@@ -235,7 +235,7 @@ def analyze_stock(stock_info, portfolio_context=None):
     }}
     """
 
-    response_text = _call_claude(system_prompt, user_prompt)
+    response_text = _call_nvidia(system_prompt, user_prompt)
     if response_text:
         try:
             res = json.loads(response_text)
