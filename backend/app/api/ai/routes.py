@@ -182,6 +182,8 @@ def _update_with_live_quotes(cached_data):
 def get_top_500():
     """Returns top 500 stocks analysis (best and worst stocks to avoid)."""
     cached_data = None
+    needs_rebuild = False
+
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
@@ -192,19 +194,34 @@ def get_top_500():
             if last_updated_str:
                 last_updated = datetime.fromisoformat(last_updated_str)
                 if (datetime.utcnow() - last_updated).total_seconds() > 86400:
-                    cached_data = None  # Force cache rebuild
+                    needs_rebuild = True
                 else:
-                    # Check if any database stock has new analysis updates since the cache was generated
                     newest_stock = Stock.query.order_by(Stock.last_updated.desc()).first()
                     if newest_stock and newest_stock.last_updated:
                         if newest_stock.last_updated > last_updated:
                             print(f"[CACHE] DB has newer updates ({newest_stock.last_updated} > {last_updated}). Rebuilding cache...")
-                            cached_data = None  # Force cache rebuild
+                            needs_rebuild = True
         except Exception as e:
             print(f"Error reading S&P 500 AI cache: {e}")
+            needs_rebuild = True
 
     if not cached_data:
+        # No cache exists at all; generate it synchronously
         cached_data = _generate_and_cache_top_500()
+    elif needs_rebuild:
+        # Cache is stale; rebuild in the background
+        print("[CACHE] Cache is stale. Rebuilding in background thread...")
+        from flask import current_app
+        app = current_app._get_current_object()
+        
+        def run_in_context():
+            with app.app_context():
+                try:
+                    _generate_and_cache_top_500()
+                except Exception as e:
+                    print(f"Error rebuilding cache in background: {e}")
+        
+        threading.Thread(target=run_in_context).start()
 
     # Update with live quotes on every request so prices are always fresh
     _update_with_live_quotes(cached_data)
@@ -227,6 +244,16 @@ def _generate_and_cache_top_500():
     rec_tickers = ["NVDA", "MSFT", "AMD", "GOOGL", "AAPL", "AMZN", "META", "AVGO", "COST", "LLY"]
     avoid_tickers = ["SNAP", "RIVN", "COIN", "ZM", "HOOD", "NKLA", "PTON", "WBA", "INTC", "DIS"]
 
+    existing_analyses = {}
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+                old_cache = json.load(f)
+                for item in old_cache.get('recommended', []) + old_cache.get('worst', []):
+                    existing_analyses[item['ticker']] = item
+        except Exception as e:
+            print(f"Error loading existing cache for fallback: {e}")
+
     recommended = []
     worst = []
 
@@ -238,13 +265,20 @@ def _generate_and_cache_top_500():
             stock_info = stock.to_dict()
             stock_info.update(quote)
             
-            # Use database AI analysis if it exists, otherwise fall back to direct query
+            # Use database AI analysis if it exists, otherwise check existing cache, otherwise fall back to direct query
             if stock.ai_recommendation:
                 rec_val = stock.ai_recommendation
                 confidence_val = stock.ai_confidence
                 reasoning_val = stock.ai_summary
                 pros_val = json.loads(stock.ai_pros) if stock.ai_pros else []
                 potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if stock.price else 0.0
+            elif ticker in existing_analyses:
+                exist_item = existing_analyses[ticker]
+                rec_val = exist_item.get('recommendation', 'hold')
+                confidence_val = exist_item.get('confidence', 50)
+                reasoning_val = exist_item.get('reasoning', '')
+                pros_val = exist_item.get('keyPoints', [])
+                potential_val = exist_item.get('potentialReturn', 0.0)
             else:
                 analysis = ai_service.analyze_stock(stock_info)
                 rec_val = 'strong_buy' if ticker in ["NVDA", "MSFT"] else 'buy'
@@ -281,6 +315,13 @@ def _generate_and_cache_top_500():
                 reasoning_val = stock.ai_summary
                 cons_val = json.loads(stock.ai_cons) if stock.ai_cons else []
                 potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if stock.price else 0.0
+            elif ticker in existing_analyses:
+                exist_item = existing_analyses[ticker]
+                rec_val = exist_item.get('recommendation', 'hold')
+                confidence_val = exist_item.get('confidence', 50)
+                reasoning_val = exist_item.get('reasoning', '')
+                cons_val = exist_item.get('keyPoints', [])
+                potential_val = exist_item.get('potentialReturn', 0.0)
             else:
                 analysis = ai_service.analyze_stock(stock_info)
                 rec_val = 'strong_sell' if ticker in ["RIVN", "HOOD"] else 'sell'

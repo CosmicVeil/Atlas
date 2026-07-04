@@ -9,7 +9,7 @@ CLAUDE_VERSION = "2023-06-01"
 CLAUDE_MODEL = "claude-3-5-sonnet-20241022"
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
-NVIDIA_API_KEY = os.environ.get('NVIDIA_API_KEY') or "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"
+NVIDIA_API_KEY = os.environ.get('NVIDIA_API_KEY')
 NVIDIA_MODEL = "deepseek-ai/deepseek-v4-pro"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
