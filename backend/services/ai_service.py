@@ -1,7 +1,20 @@
 import os
 import json
+import operator
 import requests
 import random
+from typing_extensions import TypedDict
+from typing import Annotated
+from langgraph.graph import StateGraph, START, END
+try:
+    from langgraph.types import Send
+except ImportError:
+    try:
+        from langgraph.graph import Send
+    except ImportError:
+        Send = None  # type: ignore
+
+
 
 # Load API Keys from environment
 CLAUDE_API_KEY = os.environ.get('CLAUDE_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')
@@ -235,7 +248,7 @@ def analyze_stock(stock_info, portfolio_context=None):
     }}
     """
 
-    response_text = _call_nvidia(system_prompt, user_prompt)
+    response_text = _call_multiple_models(system_prompt, user_prompt)
     if response_text:
         try:
             res = json.loads(response_text)
@@ -308,7 +321,7 @@ def recommend_portfolio(portfolio_context):
     }}
     """
 
-    response_text = _call_claude(system_prompt, user_prompt)
+    response_text = _call_multiple_models(system_prompt, user_prompt)
     if response_text:
         try:
             res = json.loads(response_text)
@@ -379,7 +392,7 @@ def suggest_buys(budget, portfolio_context=None, available_stocks=None):
     }}
     """
 
-    response_text = _call_claude(system_prompt, user_prompt)
+    response_text = _call_multiple_models(system_prompt, user_prompt)
     if response_text:
         try:
             res = json.loads(response_text)
@@ -607,3 +620,146 @@ def _simulate_budget_suggestions(budget, portfolio_context, available_stocks):
         "purchases": purchases,
         "isSimulated": True
     }
+
+
+# ── Multi-Model LangGraph Workflow ──
+class MultiModelState(TypedDict, total=False):
+    system_prompt: str
+    user_prompt: str
+    responses: Annotated[list, operator.add]
+    final_report: str
+
+
+def _extract_json(text):
+    """Extract and parse JSON from model response text."""
+    if not text:
+        return None
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text.split("```json", 1)[1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+    elif text.startswith("```"):
+        text = text.split("```", 1)[1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
+
+
+def _nvidia_fundamentalist_node(state: MultiModelState) -> dict:
+    system = (
+        "You are a fundamental analyst. Examine financial statements, earnings, "
+        "balance sheets, and business fundamentals. Respond ONLY with a single JSON block."
+    )
+    text = _call_nvidia(system, state["user_prompt"])
+    return {"responses": [{"provider": "nvidia_fundamentalist", "data": _extract_json(text)}]}
+
+
+def _nvidia_quant_node(state: MultiModelState) -> dict:
+    system = (
+        "You are a quantitative analyst. Evaluate technical indicators, momentum, "
+        "and historical volatility. Respond ONLY with a single JSON block."
+    )
+    text = _call_nvidia(system, state["user_prompt"])
+    return {"responses": [{"provider": "nvidia_quant", "data": _extract_json(text)}]}
+
+
+def _nvidia_risk_node(state: MultiModelState) -> dict:
+    system = (
+        "You are a risk manager. Identify macroeconomic threats, regulatory changes, "
+        "and downside risks. Respond ONLY with a single JSON block."
+    )
+    text = _call_nvidia(system, state["user_prompt"])
+    return {"responses": [{"provider": "nvidia_risk", "data": _extract_json(text)}]}
+
+
+# TODO: Make the consensus node using AI, rather than using code logic
+def _consensus_node(state: MultiModelState) -> dict:
+    from collections import Counter
+
+    responses = [r for r in state.get("responses", []) if r.get("data") is not None]
+
+    if not responses:
+        return {"final_report": ""}
+
+    if len(responses) == 1:
+        return {"final_report": json.dumps(responses[0]["data"])}
+
+    # Multi-Model consensus
+    results = [(r["provider"], r["data"]) for r in responses]
+
+    # 1. Vote on recommendation
+    rec_counts = Counter(d.get('recommendation', 'hold') for p, d in results)
+    winner_rec = rec_counts.most_common(1)[0][0]
+    print(f"[LangGraph] Recommendation vote: {dict(rec_counts)} -> winner: {winner_rec}")
+
+    # 2. Vote on prediction
+    pred_counts = Counter(d.get('prediction', 'neutral') for p, d in results)
+    winner_pred = pred_counts.most_common(1)[0][0]
+
+    # 3. Base result: highest-confidence response matching winning recommendation
+    best_candidates = [(p, d) for p, d in results if d.get('recommendation') == winner_rec]
+    best_provider, best_data = max(best_candidates, key=lambda x: x[1].get('confidence', 0))
+
+    # 4. Average confidence
+    avg_conf = round(sum(d.get('confidence', 50) for p, d in results) / len(results))
+
+    # 5. Median targetPrice
+    prices = sorted([d.get('targetPrice', 0) for p, d in results if d.get('targetPrice', 0) > 0])
+    if prices:
+        mid = len(prices) // 2
+        median_price = prices[mid] if (len(prices) % 2 == 1) else (prices[mid - 1] + prices[mid]) / 2
+    else:
+        median_price = best_data.get('targetPrice', 0)
+
+    # 6. Merge lists and deduplicate
+    all_pros = list(dict.fromkeys([item for p, d in results for item in d.get('pros', [])]))[:5]
+    all_cons = list(dict.fromkeys([item for p, d in results for item in d.get('cons', [])]))[:5]
+    all_risks = list(dict.fromkeys([item for p, d in results for item in d.get('riskFactors', [])]))[:4]
+
+    # 7. Build consensus
+    consensus = dict(best_data)
+    consensus['recommendation'] = winner_rec
+    consensus['prediction'] = winner_pred
+    consensus['confidence'] = avg_conf
+    consensus['targetPrice'] = round(median_price, 2)
+    if all_pros:
+        consensus['pros'] = all_pros
+    if all_cons:
+        consensus['cons'] = all_cons
+    if all_risks:
+        consensus['riskFactors'] = all_risks
+
+    return {"final_report": json.dumps(consensus)}
+
+
+# Compile the LangGraph workflow once at import time
+_mm_workflow = StateGraph(MultiModelState)
+_mm_workflow.add_node("nvidia_fundamentalist", _nvidia_fundamentalist_node)
+_mm_workflow.add_node("nvidia_quant", _nvidia_quant_node)
+_mm_workflow.add_node("nvidia_risk", _nvidia_risk_node)
+_mm_workflow.add_node("consensus", _consensus_node)
+_mm_workflow.add_edge(START, "nvidia_fundamentalist")
+_mm_workflow.add_edge(START, "nvidia_quant")
+_mm_workflow.add_edge(START, "nvidia_risk")
+_mm_workflow.add_edge("nvidia_fundamentalist", "consensus")
+_mm_workflow.add_edge("nvidia_quant", "consensus")
+_mm_workflow.add_edge("nvidia_risk", "consensus")
+_mm_workflow.add_edge("consensus", END)
+_multi_model_graph = _mm_workflow.compile()
+
+
+def _call_multiple_models(system_prompt, user_prompt):
+    try:
+        result = _multi_model_graph.invoke({
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+        })
+        return result.get("final_report", "")
+    except Exception as e:
+        print(f"[LangGraph Multi-Model] Error: {e}")
+        return None

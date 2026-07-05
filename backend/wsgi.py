@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 
 # Ensure backend directory is in the Python path
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,6 +21,12 @@ if os.path.exists(env_path):
                 os.environ[key.strip()] = val.strip().strip("'\"")
 
 from app import create_app
+
+result = subprocess.run(
+    [sys.executable, "services/ai_service.py"], 
+    capture_output=True,  # Captures stdout and stderr
+    text=True             # Returns strings instead of bytes
+)
 
 app = create_app()
 
