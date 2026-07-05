@@ -240,10 +240,6 @@ def refresh_top_500():
 
 def _generate_and_cache_top_500():
     """Internal helper to generate AI recommendations for top 500 stocks and cache it."""
-    # List of top recommended and avoid stock tickers we will analyze/simulate
-    rec_tickers = ["NVDA", "MSFT", "AMD", "GOOGL", "AAPL", "AMZN", "META", "AVGO", "COST", "LLY"]
-    avoid_tickers = ["SNAP", "RIVN", "COIN", "ZM", "HOOD", "NKLA", "PTON", "WBA", "INTC", "DIS"]
-
     existing_analyses = {}
     if os.path.exists(CACHE_FILE):
         try:
@@ -257,92 +253,108 @@ def _generate_and_cache_top_500():
     recommended = []
     worst = []
 
-    # Get data from database for recommended
-    for ticker in rec_tickers:
-        stock = Stock.query.filter_by(symbol=ticker).first()
-        if stock:
-            quote = market_data.get_quote(ticker) or {}
-            stock_info = stock.to_dict()
-            stock_info.update(quote)
-            
-            # Use database AI analysis if it exists, otherwise check existing cache, otherwise fall back to direct query
+    stocks = Stock.query.all()
+    all_stocks_data = []
+
+    for stock in stocks:
+        try:
+            ticker = stock.symbol
+            # Use database AI analysis if it exists, otherwise check existing cache, otherwise fall back to fast local simulation
             if stock.ai_recommendation:
                 rec_val = stock.ai_recommendation
-                confidence_val = stock.ai_confidence
-                reasoning_val = stock.ai_summary
+                confidence_val = stock.ai_confidence or 50
+                reasoning_val = stock.ai_summary or ""
                 pros_val = json.loads(stock.ai_pros) if stock.ai_pros else []
-                potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if stock.price else 0.0
-            elif ticker in existing_analyses:
-                exist_item = existing_analyses[ticker]
-                rec_val = exist_item.get('recommendation', 'hold')
-                confidence_val = exist_item.get('confidence', 50)
-                reasoning_val = exist_item.get('reasoning', '')
-                pros_val = exist_item.get('keyPoints', [])
-                potential_val = exist_item.get('potentialReturn', 0.0)
-            else:
-                analysis = ai_service.analyze_stock(stock_info)
-                rec_val = 'strong_buy' if ticker in ["NVDA", "MSFT"] else 'buy'
-                confidence_val = analysis.get('confidence', 85)
-                reasoning_val = analysis.get('summary', '')
-                pros_val = analysis.get('pros', [])[:4]
-                potential_val = round(float(analysis.get('targetPrice', stock.price) - stock.price) / stock.price * 100, 1) if stock.price else 0.0
-
-            recommended.append({
-                'ticker': ticker,
-                'name': stock.name,
-                'price': stock_info.get('price', stock.price),
-                'change': stock_info.get('change', stock.change),
-                'changePercent': float(stock_info.get('change_percent', '0%').replace('%', '')),
-                'recommendation': rec_val,
-                'confidence': confidence_val,
-                'reasoning': reasoning_val,
-                'keyPoints': pros_val,
-                'riskLevel': 'medium' if ticker in ["NVDA", "AMD"] else 'low',
-                'potentialReturn': potential_val
-            })
-
-    # Get data for avoid
-    for ticker in avoid_tickers:
-        stock = Stock.query.filter_by(symbol=ticker).first()
-        if stock:
-            quote = market_data.get_quote(ticker) or {}
-            stock_info = stock.to_dict()
-            stock_info.update(quote)
-            
-            if stock.ai_recommendation:
-                rec_val = stock.ai_recommendation
-                confidence_val = stock.ai_confidence
-                reasoning_val = stock.ai_summary
                 cons_val = json.loads(stock.ai_cons) if stock.ai_cons else []
-                potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if stock.price else 0.0
+                potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if (stock.ai_target_price and stock.price) else 0.0
             elif ticker in existing_analyses:
                 exist_item = existing_analyses[ticker]
                 rec_val = exist_item.get('recommendation', 'hold')
                 confidence_val = exist_item.get('confidence', 50)
                 reasoning_val = exist_item.get('reasoning', '')
-                cons_val = exist_item.get('keyPoints', [])
+                pros_val = exist_item.get('keyPoints', []) if rec_val in ['strong_buy', 'buy'] else []
+                cons_val = exist_item.get('keyPoints', []) if rec_val in ['strong_sell', 'sell'] else []
                 potential_val = exist_item.get('potentialReturn', 0.0)
             else:
-                analysis = ai_service.analyze_stock(stock_info)
-                rec_val = 'strong_sell' if ticker in ["RIVN", "HOOD"] else 'sell'
-                confidence_val = analysis.get('confidence', 80)
+                # Fast simulation fallback that doesn't hit external API keys
+                analysis = ai_service._simulate_stock_analysis(stock.to_dict(), None)
+                rec_val = analysis.get('recommendation', 'hold')
+                confidence_val = analysis.get('confidence', 50)
                 reasoning_val = analysis.get('summary', '')
-                cons_val = analysis.get('cons', [])[:4]
-                potential_val = round(float(analysis.get('targetPrice', stock.price) - stock.price) / stock.price * 100, 1) if stock.price else 0.0
+                pros_val = analysis.get('pros', [])
+                cons_val = analysis.get('cons', [])
+                potential_val = analysis.get('potentialReturn', 0.0)
 
-            worst.append({
+            # Determine keyPoints based on recommendation
+            if rec_val in ['strong_buy', 'buy']:
+                key_points = pros_val[:4]
+                risk_level = 'medium' if (ticker in ["NVDA", "AMD"] or (stock.pe_ratio and stock.pe_ratio > 30)) else 'low'
+            elif rec_val in ['strong_sell', 'sell']:
+                key_points = cons_val[:4]
+                risk_level = 'high'
+            else:
+                key_points = pros_val[:4] if pros_val else cons_val[:4]
+                risk_level = 'medium'
+
+            try:
+                change_pct = float(stock.change_percent.replace('%', '')) if stock.change_percent else 0.0
+            except ValueError:
+                change_pct = 0.0
+
+            all_stocks_data.append({
                 'ticker': ticker,
                 'name': stock.name,
-                'price': stock_info.get('price', stock.price),
-                'change': stock_info.get('change', stock.change),
-                'changePercent': float(stock_info.get('change_percent', '0%').replace('%', '')),
+                'price': stock.price or 0.0,
+                'change': stock.change or 0.0,
+                'changePercent': change_pct,
                 'recommendation': rec_val,
                 'confidence': confidence_val,
                 'reasoning': reasoning_val,
-                'keyPoints': cons_val,
-                'riskLevel': 'high',
+                'keyPoints': key_points,
+                'riskLevel': risk_level,
                 'potentialReturn': potential_val
             })
+        except Exception as e:
+            print(f"Error processing stock {stock.symbol} for top 500: {e}")
+
+    if all_stocks_data:
+        # Sort and filter for recommended list
+        recommended_candidates = [s for s in all_stocks_data if s['recommendation'] in ['strong_buy', 'buy']]
+        recommended_candidates.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
+        recommended = recommended_candidates[:10]
+
+        # Fill recommended to 10 if necessary using 'hold' stocks
+        if len(recommended) < 10:
+            used_tickers = {s['ticker'] for s in recommended}
+            remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers and s['recommendation'] == 'hold']
+            remaining.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
+            recommended.extend(remaining[:10 - len(recommended)])
+
+        # If still not 10, fill with any remaining stocks
+        if len(recommended) < 10:
+            used_tickers = {s['ticker'] for s in recommended}
+            remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers]
+            remaining.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
+            recommended.extend(remaining[:10 - len(recommended)])
+
+        # Sort and filter for avoid list (worst)
+        worst_candidates = [s for s in all_stocks_data if s['recommendation'] in ['strong_sell', 'sell']]
+        worst_candidates.sort(key=lambda x: (x['potentialReturn'], -x['confidence']))
+        worst = worst_candidates[:10]
+
+        # Fill worst to 10 if necessary using 'hold' stocks
+        if len(worst) < 10:
+            used_tickers = {s['ticker'] for s in worst + recommended}
+            remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers and s['recommendation'] == 'hold']
+            remaining.sort(key=lambda x: (x['potentialReturn'], -x['confidence']))
+            worst.extend(remaining[:10 - len(worst)])
+
+        # If still not 10, fill with any remaining stocks (prioritizing non-buy stocks)
+        if len(worst) < 10:
+            used_tickers = {s['ticker'] for s in worst + recommended}
+            remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers]
+            remaining.sort(key=lambda x: (1 if x['recommendation'] in ['strong_buy', 'buy'] else 0, x['potentialReturn'], -x['confidence']))
+            worst.extend(remaining[:10 - len(worst)])
 
     # If database is empty or we couldn't seed, return standard mock items
     if not recommended:

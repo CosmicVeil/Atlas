@@ -5,14 +5,19 @@ import requests
 import random
 from typing_extensions import TypedDict
 from typing import Annotated
-from langgraph.graph import StateGraph, START, END
 try:
-    from langgraph.types import Send
-except ImportError:
+    from langgraph.graph import StateGraph, START, END
     try:
-        from langgraph.graph import Send
+        from langgraph.types import Send
     except ImportError:
-        Send = None  # type: ignore
+        try:
+            from langgraph.graph import Send
+        except ImportError:
+            Send = None  # type: ignore
+    HAS_LANGGRAPH = True
+except ImportError:
+    HAS_LANGGRAPH = False
+    StateGraph, START, END, Send = None, None, None, None
 
 
 
@@ -738,28 +743,57 @@ def _consensus_node(state: MultiModelState) -> dict:
 
 
 # Compile the LangGraph workflow once at import time
-_mm_workflow = StateGraph(MultiModelState)
-_mm_workflow.add_node("nvidia_fundamentalist", _nvidia_fundamentalist_node)
-_mm_workflow.add_node("nvidia_quant", _nvidia_quant_node)
-_mm_workflow.add_node("nvidia_risk", _nvidia_risk_node)
-_mm_workflow.add_node("consensus", _consensus_node)
-_mm_workflow.add_edge(START, "nvidia_fundamentalist")
-_mm_workflow.add_edge(START, "nvidia_quant")
-_mm_workflow.add_edge(START, "nvidia_risk")
-_mm_workflow.add_edge("nvidia_fundamentalist", "consensus")
-_mm_workflow.add_edge("nvidia_quant", "consensus")
-_mm_workflow.add_edge("nvidia_risk", "consensus")
-_mm_workflow.add_edge("consensus", END)
-_multi_model_graph = _mm_workflow.compile()
+if HAS_LANGGRAPH:
+    _mm_workflow = StateGraph(MultiModelState)
+    _mm_workflow.add_node("nvidia_fundamentalist", _nvidia_fundamentalist_node)
+    _mm_workflow.add_node("nvidia_quant", _nvidia_quant_node)
+    _mm_workflow.add_node("nvidia_risk", _nvidia_risk_node)
+    _mm_workflow.add_node("consensus", _consensus_node)
+    _mm_workflow.add_edge(START, "nvidia_fundamentalist")
+    _mm_workflow.add_edge(START, "nvidia_quant")
+    _mm_workflow.add_edge(START, "nvidia_risk")
+    _mm_workflow.add_edge("nvidia_fundamentalist", "consensus")
+    _mm_workflow.add_edge("nvidia_quant", "consensus")
+    _mm_workflow.add_edge("nvidia_risk", "consensus")
+    _mm_workflow.add_edge("consensus", END)
+    _multi_model_graph = _mm_workflow.compile()
+else:
+    _multi_model_graph = None
 
 
 def _call_multiple_models(system_prompt, user_prompt):
-    try:
-        result = _multi_model_graph.invoke({
-            "system_prompt": system_prompt,
-            "user_prompt": user_prompt,
-        })
-        return result.get("final_report", "")
-    except Exception as e:
-        print(f"[LangGraph Multi-Model] Error: {e}")
-        return None
+    if HAS_LANGGRAPH and _multi_model_graph is not None:
+        try:
+            result = _multi_model_graph.invoke({
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+            })
+            return result.get("final_report", "")
+        except Exception as e:
+            print(f"[LangGraph Multi-Model] Error: {e}")
+            return None
+    else:
+        # Parallel Execution Fallback without using LangGraph library
+        print("[LangGraph Fallback] Running consensus workflow without langgraph library...")
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            state = {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "responses": []
+            }
+            
+            def run_node(node_func):
+                return node_func(state)
+            
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                nodes = [_nvidia_fundamentalist_node, _nvidia_quant_node, _nvidia_risk_node]
+                results = list(executor.map(run_node, nodes))
+                for r in results:
+                    state["responses"].extend(r["responses"])
+            
+            consensus_res = _consensus_node(state)
+            return consensus_res.get("final_report", "")
+        except Exception as e:
+            print(f"[LangGraph Fallback] Error: {e}")
+            return None
