@@ -1,10 +1,18 @@
 const API_URL = import.meta.env.VITE_API_URL;
 
+async function readJsonResponse(res) {
+  const data = await res.json();
+  if (!res.ok) {
+    return { ...data, error: data.error || data.msg || `Request failed (${res.status})` };
+  }
+  return data;
+}
+
 export async function getPortfolios(token) {
   const res = await fetch(`${API_URL}/api/portfolios/`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  return res.json();
+  return readJsonResponse(res);
 }
 
 export async function createPortfolio(token, name) {
@@ -16,7 +24,7 @@ export async function createPortfolio(token, name) {
     },
     body: JSON.stringify({ name })
   });
-  return res.json();
+  return readJsonResponse(res);
 }
 
 export async function updatePortfolio(token, id, name) {
@@ -28,7 +36,7 @@ export async function updatePortfolio(token, id, name) {
     },
     body: JSON.stringify({ name })
   });
-  return res.json();
+  return readJsonResponse(res);
 }
 
 export async function deletePortfolio(token, id) {
@@ -36,5 +44,5 @@ export async function deletePortfolio(token, id) {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${token}` }
   });
-  return res.json();
+  return readJsonResponse(res);
 }

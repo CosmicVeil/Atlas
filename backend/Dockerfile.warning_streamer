@@ -1,0 +1,17 @@
+FROM python:3.12-slim
+
+# Keep Python logs visible in Docker and avoid writing .pyc files into layers.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install backend dependencies once before copying app code for better Docker cache reuse.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the services package because the streamer imports the AI analyzer and Mongo store.
+COPY services ./services
+
+# Run the warning consumer: Redpanda news topic -> AI analysis -> MongoDB.
+CMD ["python", "-m", "services.warning_streamer"]

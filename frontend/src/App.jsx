@@ -8,6 +8,7 @@ import Portfolio from './pages/Portfolio'
 import Profile from './pages/Profile'
 import AIAnalysisScreen from './pages/AIAnalysisScreen'
 import UserStockAnalysis from './pages/UserStockAnalysis'
+import MarketNews from './pages/MarketNews'
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -53,6 +54,10 @@ function App() {
               <UserStockAnalysis />
             </PrivateRoute>
           }
+        />
+        <Route
+          path="/market-news"
+          element={<MarketNews />}
         />
       </Routes>
     </div>

@@ -48,6 +48,14 @@ function Navbar() {
             whileHover={{ scale: 1.05, y: -2 }}
             transition={{ type: "spring", stiffness: 400, damping: 10 }}
           >
+            <Link to="/market-news" className="text-white/70 hover:text-white transition-colors text-sm tracking-wide no-underline">
+              Market News
+            </Link>
+          </motion.div>
+          <motion.div
+            whileHover={{ scale: 1.05, y: -2 }}
+            transition={{ type: "spring", stiffness: 400, damping: 10 }}
+          >
             <Link to="/ai-analysis" className="text-white/70 hover:text-white transition-colors text-sm tracking-wide no-underline">
               AI Analysis
             </Link>

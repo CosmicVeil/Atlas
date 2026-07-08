@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { getPortfolios, createPortfolio, updatePortfolio, deletePortfolio } from '../api/portfolio';
 import { getHoldings as getHoldingsApi, addHolding as addHoldingApi, deleteHolding as deleteHoldingApi } from '../api/holdings';
 import { getPortfolioRecommendations } from '../api/ai';
+import { getMarketWarnings } from '../api/news';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search, Loader2, AlertTriangle, Sparkles, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
 
 // Mock holdings helper to pre-populate list on first view of default portfolios
@@ -24,6 +25,37 @@ const INITIAL_MOCK_HOLDINGS = {
   ]
 };
 
+function MarketWarningCard({ warning, tone }) {
+  const isPositive = tone === 'positive';
+  const borderClass = isPositive ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5';
+  const scoreClass = isPositive ? 'text-emerald-300 border-emerald-500/20' : 'text-red-300 border-red-500/20';
+
+  return (
+    <div className={`border ${borderClass} p-4`}>
+      <div className="flex items-start justify-between gap-4 mb-2">
+        <div>
+          <p className="text-white font-medium">{warning.symbol || 'Market'}</p>
+          <p className="text-xs text-white/40">{warning.company_name || warning.headline}</p>
+        </div>
+        <span className={`text-xs border px-2 py-1 ${scoreClass}`}>
+          {warning.impact_score ?? 0}/100
+        </span>
+      </div>
+      <p className="text-sm text-white/70 leading-relaxed">{warning.reasoning}</p>
+      {warning.article_url && (
+        <a
+          href={warning.article_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 mt-3 text-xs text-white/50 hover:text-white"
+        >
+          Source <ExternalLink className="w-3 h-3" />
+        </a>
+      )}
+    </div>
+  );
+}
+
 function Portfolio() {
   const { token } = useAuth();
   const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
@@ -35,6 +67,11 @@ function Portfolio() {
   const [holdings, setHoldings] = useState([]);
   const [portfolioSummary, setPortfolioSummary] = useState(null);
   const [holdingsLoading, setHoldingsLoading] = useState(false);
+
+  // Read-only market warnings. This uses /api/news/warnings, not portfolio or
+  // holdings endpoints, so it cannot affect saving portfolios or adding stocks.
+  const [marketWarnings, setMarketWarnings] = useState({ negative: [], positive: [] });
+  const [marketWarningsLoading, setMarketWarningsLoading] = useState(false);
   
   // AI Recommendations
   const [aiRecs, setAiRecs] = useState(null);
@@ -58,6 +95,7 @@ function Portfolio() {
   useEffect(() => {
     if (token) {
       fetchPortfolios();
+      fetchMarketWarnings();
     }
   }, [token]);
 
@@ -74,6 +112,7 @@ function Portfolio() {
   useEffect(() => {
     if (selectedPortfolio && token) {
       fetchHoldings(selectedPortfolio.id);
+      fetchMarketWarnings();
     } else {
       setHoldings([]);
       setPortfolioSummary(null);
@@ -105,6 +144,23 @@ function Portfolio() {
       console.error("Error fetching holdings:", e);
     } finally {
       setHoldingsLoading(false);
+    }
+  }
+
+  async function fetchMarketWarnings() {
+    setMarketWarningsLoading(true);
+    try {
+      const data = await getMarketWarnings(null, 10);
+      if (data && !data.error) {
+        setMarketWarnings({
+          negative: data.negative || [],
+          positive: data.positive || []
+        });
+      }
+    } catch (e) {
+      console.error("Error fetching market warnings:", e);
+    } finally {
+      setMarketWarningsLoading(false);
     }
   }
 
@@ -227,6 +283,9 @@ function Portfolio() {
       alert("Error removing stock.");
     }
   }
+
+  const visibleNegativeWarnings = marketWarnings.negative.slice(0, 3);
+  const visiblePositiveWarnings = marketWarnings.positive.slice(0, 3);
 
   // Render view: Stock Detail
   if (selectedStock && selectedPortfolio) {
@@ -491,6 +550,66 @@ function Portfolio() {
             </div>
           </div>
 
+          {/* Market News Warnings */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+            <div className="border border-white/5 bg-black p-6">
+              <div className="flex items-center justify-between gap-4 mb-5">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-300" strokeWidth={1.5} />
+                  <div>
+                    <h3 className="text-sm text-white/70 tracking-wider uppercase">Market Risks</h3>
+                    <p className="text-xs text-white/30 mt-1">Accepted negative warnings from news.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchMarketWarnings}
+                  className="text-xs text-white/50 hover:text-white bg-transparent border border-white/10 px-3 py-2 cursor-pointer"
+                >
+                  Refresh
+                </button>
+              </div>
+              {marketWarningsLoading && visibleNegativeWarnings.length === 0 ? (
+                <div className="flex items-center gap-3 text-white/40 text-sm py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading market risks...
+                </div>
+              ) : visibleNegativeWarnings.length === 0 ? (
+                <p className="text-white/40 text-sm py-4">No accepted negative warnings yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {visibleNegativeWarnings.map((warning) => (
+                    <MarketWarningCard key={warning.id} warning={warning} tone="negative" />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border border-white/5 bg-black p-6">
+              <div className="flex items-center gap-3 mb-5">
+                <Sparkles className="w-5 h-5 text-emerald-300" strokeWidth={1.5} />
+                <div>
+                  <h3 className="text-sm text-white/70 tracking-wider uppercase">Positive Signals</h3>
+                  <p className="text-xs text-white/30 mt-1">Accepted positive warnings from news.</p>
+                </div>
+              </div>
+              {marketWarningsLoading && visiblePositiveWarnings.length === 0 ? (
+                <div className="flex items-center gap-3 text-white/40 text-sm py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading positive signals...
+                </div>
+              ) : visiblePositiveWarnings.length === 0 ? (
+                <p className="text-white/40 text-sm py-4">No accepted positive warnings yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {visiblePositiveWarnings.map((warning) => (
+                    <MarketWarningCard key={warning.id} warning={warning} tone="positive" />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Holdings Table */}
           <div className="border border-white/5">
             <div className="grid grid-cols-7 gap-4 p-6 border-b border-white/5 bg-black">
@@ -738,6 +857,66 @@ function Portfolio() {
             <Plus className="w-4 h-4" strokeWidth={1.5} />
             New Portfolio
           </motion.button>
+        </div>
+
+        {/* Market News Warnings */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          <div className="border border-white/5 bg-black p-6">
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-300" strokeWidth={1.5} />
+                <div>
+                  <h3 className="text-sm text-white/70 tracking-wider uppercase">Market Risks</h3>
+                  <p className="text-xs text-white/30 mt-1">Accepted negative warnings from news.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={fetchMarketWarnings}
+                className="text-xs text-white/50 hover:text-white bg-transparent border border-white/10 px-3 py-2 cursor-pointer"
+              >
+                Refresh
+              </button>
+            </div>
+            {marketWarningsLoading && visibleNegativeWarnings.length === 0 ? (
+              <div className="flex items-center gap-3 text-white/40 text-sm py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading market risks...
+              </div>
+            ) : visibleNegativeWarnings.length === 0 ? (
+              <p className="text-white/40 text-sm py-4">No accepted negative warnings yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {visibleNegativeWarnings.map((warning) => (
+                  <MarketWarningCard key={warning.id} warning={warning} tone="negative" />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border border-white/5 bg-black p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <Sparkles className="w-5 h-5 text-emerald-300" strokeWidth={1.5} />
+              <div>
+                <h3 className="text-sm text-white/70 tracking-wider uppercase">Positive Signals</h3>
+                <p className="text-xs text-white/30 mt-1">Accepted positive warnings from news.</p>
+              </div>
+            </div>
+            {marketWarningsLoading && visiblePositiveWarnings.length === 0 ? (
+              <div className="flex items-center gap-3 text-white/40 text-sm py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading positive signals...
+              </div>
+            ) : visiblePositiveWarnings.length === 0 ? (
+              <p className="text-white/40 text-sm py-4">No accepted positive warnings yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {visiblePositiveWarnings.map((warning) => (
+                  <MarketWarningCard key={warning.id} warning={warning} tone="positive" />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Add Portfolio Inline Form / Dialog */}

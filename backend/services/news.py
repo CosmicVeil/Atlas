@@ -22,7 +22,7 @@ NEWS_API_SYMBOLS = os.environ.get("NEWS_API_SYMBOLS", "")
 
 KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "atlas.market.news")
-STREAM_INTERVAL_SECONDS = int(os.environ.get("STREAM_INTERVAL_SECONDS", "300"))
+STREAM_INTERVAL_SECONDS = int(os.environ.get("STREAM_INTERVAL_SECONDS", "86400"))
 ARTICLE_TIMEOUT_SECONDS = int(os.environ.get("ARTICLE_TIMEOUT_SECONDS", "12"))
 MAX_ARTICLE_CHARS = int(os.environ.get("MAX_ARTICLE_CHARS", "12000"))
 MAX_NEWS_PAGES = int(os.environ.get("MAX_NEWS_PAGES", "1"))

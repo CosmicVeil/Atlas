@@ -1,4 +1,11 @@
 services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.3.5
     command:
@@ -29,6 +36,23 @@ services:
       timeout: 5s
       retries: 12
 
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.5
+    command:
+      - topic
+      - create
+      - atlas.market.news
+      - -X
+      - brokers=redpanda:29092
+      - --partitions
+      - "1"
+      - --replicas
+      - "1"
+      - --if-not-exists
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
   news-streamer:
     build:
       context: ./backend
@@ -40,8 +64,32 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       KAFKA_TOPIC: atlas.market.news
       NEWS_STREAM_MODE: ${NEWS_STREAM_MODE:-forever}
-      STREAM_INTERVAL_SECONDS: ${STREAM_INTERVAL_SECONDS:-300}
+      STREAM_INTERVAL_SECONDS: ${STREAM_INTERVAL_SECONDS:-86400}
     depends_on:
-      redpanda:
-        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  warning-streamer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.warning_streamer
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      KAFKA_TOPIC: atlas.market.news
+      WARNING_STREAM_GROUP_ID: atlas-warning-streamer
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DATABASE: atlas
+      MONGO_WARNINGS_COLLECTION: market_warnings
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mongo-data:

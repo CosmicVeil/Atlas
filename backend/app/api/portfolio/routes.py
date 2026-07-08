@@ -85,5 +85,3 @@ def delete_portfolio(portfolio_id):
     db.session.delete(portfolio)
     db.session.commit()
     return jsonify({'message': 'Portfolio deleted successfully'}), 200
-
-
