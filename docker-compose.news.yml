@@ -1,0 +1,47 @@
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.5
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://redpanda:29092,external://localhost:9092
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  news-streamer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.news
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      KAFKA_TOPIC: atlas.market.news
+      NEWS_STREAM_MODE: ${NEWS_STREAM_MODE:-forever}
+      STREAM_INTERVAL_SECONDS: ${STREAM_INTERVAL_SECONDS:-300}
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped

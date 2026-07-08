@@ -18,3 +18,11 @@ Navigate to the `frontend` directory, install packages, and start the developmen
 npm install --legacy-peer-deps
 npm run dev
 ```
+
+### 3. Run the Market News Streamer
+Create `backend/.env` from `backend/.env.example`, add `NEWS_API_KEY`, then start Redpanda and the producer:
+```bash
+docker compose -f docker-compose.news.yml up --build
+```
+
+The streamer publishes enriched article messages to the `atlas.market.news` topic by default.

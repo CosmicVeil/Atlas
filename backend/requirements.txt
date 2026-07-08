@@ -13,6 +13,8 @@ sqlalchemy>=2.0.0
 
 # HTTP requests for external APIs (Alpha Vantage, etc.)
 requests>=2.31.0
+beautifulsoup4>=4.12.0
+confluent-kafka>=2.5.0
 
 # WSGI server (recommended for production, optional for dev)
 gunicorn>=21.0.0
