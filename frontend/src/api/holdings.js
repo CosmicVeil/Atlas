@@ -8,8 +8,9 @@ async function readJsonResponse(res) {
   return data;
 }
 
-export async function getHoldings(token, portfolioId) {
-  const res = await fetch(`${API_URL}/api/holdings/${portfolioId}/holdings`, {
+export async function getHoldings(token, portfolioId, live = false) {
+  const params = live ? '?live=true' : '';
+  const res = await fetch(`${API_URL}/api/holdings/${portfolioId}/holdings${params}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   return readJsonResponse(res);

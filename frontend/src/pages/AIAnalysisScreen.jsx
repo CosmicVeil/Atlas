@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { motion } from "motion/react";
@@ -14,6 +15,8 @@ import { useCurrency } from "../context/CurrencyContext";
 
 function AIAnalysisScreen() {
   const { token } = useAuth();
+  const [searchParams] = useSearchParams();
+  const lastAutoSearchTicker = useRef("");
   const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
   const [selectedTab, setSelectedTab] = useState("recommended");
   const [recommendedStocks, setRecommendedStocks] = useState([]);
@@ -48,10 +51,11 @@ function AIAnalysisScreen() {
     localStorage.setItem('atlas_watchlist', JSON.stringify(watchlist));
   }, [watchlist]);
 
-  async function handleSearchAnalyze(e) {
+  async function handleSearchAnalyze(e, forcedTicker = null) {
     e?.preventDefault();
-    const ticker = searchTicker.trim().toUpperCase();
+    const ticker = (forcedTicker || searchTicker).trim().toUpperCase();
     if (!ticker) return;
+    setSearchTicker(ticker);
     setSearchLoading(true);
     setSearchError("");
     setSearchResult(null);
@@ -96,6 +100,15 @@ function AIAnalysisScreen() {
       loadPortfolios();
     }
   }, [token]);
+
+  useEffect(() => {
+    const ticker = (searchParams.get("ticker") || "").trim().toUpperCase();
+    if (!token || !ticker || lastAutoSearchTicker.current === ticker) return;
+
+    lastAutoSearchTicker.current = ticker;
+    setSelectedTab("all");
+    handleSearchAnalyze(null, ticker);
+  }, [token, searchParams]);
 
   async function loadTop500() {
     setIsLoading(true);

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getPortfolios, createPortfolio, updatePortfolio, deletePortfolio } from '../api/portfolio';
 import { getHoldings as getHoldingsApi, addHolding as addHoldingApi, deleteHolding as deleteHoldingApi } from '../api/holdings';
 import { getPortfolioRecommendations } from '../api/ai';
-import { getMarketWarnings } from '../api/news';
+import { getPortfolioWarnings } from '../api/news';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search, Loader2, AlertTriangle, Sparkles, ExternalLink } from 'lucide-react';
@@ -57,10 +58,12 @@ function MarketWarningCard({ warning, tone }) {
 }
 
 function Portfolio() {
+  const navigate = useNavigate();
   const { token } = useAuth();
   const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
   const [portfolios, setPortfolios] = useState([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState(null);
+  const selectedPortfolioIdRef = useRef(null);
   const [selectedStock, setSelectedStock] = useState(null);
 
   // Holdings synced from backend
@@ -95,9 +98,12 @@ function Portfolio() {
   useEffect(() => {
     if (token) {
       fetchPortfolios();
-      fetchMarketWarnings();
     }
   }, [token]);
+
+  useEffect(() => {
+    selectedPortfolioIdRef.current = selectedPortfolio?.id || null;
+  }, [selectedPortfolio]);
 
   async function fetchPortfolios() {
     const data = await getPortfolios(token);
@@ -112,10 +118,11 @@ function Portfolio() {
   useEffect(() => {
     if (selectedPortfolio && token) {
       fetchHoldings(selectedPortfolio.id);
-      fetchMarketWarnings();
+      fetchMarketWarnings(selectedPortfolio.id);
     } else {
       setHoldings([]);
       setPortfolioSummary(null);
+      setMarketWarnings({ negative: [], positive: [] });
       setAiRecs(null);
     }
   }, [selectedPortfolio, token]);
@@ -125,20 +132,9 @@ function Portfolio() {
     try {
       const data = await getHoldingsApi(token, portfolioId);
       if (data && !data.error) {
-        const normalizedHoldings = (data.holdings || []).map(h => ({
-          id: h.id,
-          ticker: h.symbol,
-          shares: h.shares,
-          buyPrice: h.buy_price,
-          buyDate: h.date_bought,
-          currentPrice: h.current_price,
-          amountInvested: h.amount_invested,
-          currentValue: h.current_value,
-          gainLoss: h.gain_loss,
-          gainLossPct: h.gain_loss_pct
-        }));
-        setHoldings(normalizedHoldings);
+        setHoldings(normalizeHoldings(data.holdings || []));
         setPortfolioSummary(data.summary || null);
+        refreshLiveHoldings(portfolioId);
       }
     } catch (e) {
       console.error("Error fetching holdings:", e);
@@ -147,10 +143,39 @@ function Portfolio() {
     }
   }
 
-  async function fetchMarketWarnings() {
+  function normalizeHoldings(rawHoldings) {
+    return rawHoldings.map(h => ({
+      id: h.id,
+      ticker: h.symbol,
+      shares: h.shares,
+      buyPrice: h.buy_price,
+      buyDate: h.date_bought,
+      currentPrice: h.current_price,
+      amountInvested: h.amount_invested,
+      currentValue: h.current_value,
+      gainLoss: h.gain_loss,
+      gainLossPct: h.gain_loss_pct
+    }));
+  }
+
+  async function refreshLiveHoldings(portfolioId) {
+    try {
+      const data = await getHoldingsApi(token, portfolioId, true);
+      if (data && !data.error && selectedPortfolioIdRef.current === portfolioId) {
+        setHoldings(normalizeHoldings(data.holdings || []));
+        setPortfolioSummary(data.summary || null);
+      }
+    } catch (e) {
+      console.error("Error refreshing live holdings:", e);
+    }
+  }
+
+  async function fetchMarketWarnings(portfolioId = selectedPortfolio?.id) {
+    if (!portfolioId) return;
+
     setMarketWarningsLoading(true);
     try {
-      const data = await getMarketWarnings(null, 10);
+      const data = await getPortfolioWarnings(token, portfolioId, 10);
       if (data && !data.error) {
         setMarketWarnings({
           negative: data.negative || [],
@@ -250,8 +275,9 @@ function Portfolio() {
     try {
       const res = await addHoldingApi(token, selectedPortfolio.id, holdingData);
       if (res && !res.error) {
-        fetchHoldings(selectedPortfolio.id);
-        fetchPortfolios(); // Refresh portfolios grid values
+        await fetchHoldings(selectedPortfolio.id);
+        await fetchPortfolios(); // Refresh portfolios grid values
+        await fetchMarketWarnings(selectedPortfolio.id); // Re-check warnings for the stock that was just added.
         // Reset stock fields
         setNewStockTicker('');
         setNewStockShares('');
@@ -272,8 +298,9 @@ function Portfolio() {
     try {
       const res = await deleteHoldingApi(token, selectedPortfolio.id, holdingId);
       if (res && !res.error) {
-        fetchHoldings(selectedPortfolio.id);
-        fetchPortfolios(); // Refresh portfolios grid values
+        await fetchHoldings(selectedPortfolio.id);
+        await fetchPortfolios(); // Refresh portfolios grid values
+        await fetchMarketWarnings(selectedPortfolio.id); // Remove risks for stocks no longer in this portfolio.
         setSelectedStock(null);
       } else {
         alert(res.error || "Failed to remove stock.");
@@ -563,7 +590,7 @@ function Portfolio() {
                 </div>
                 <button
                   type="button"
-                  onClick={fetchMarketWarnings}
+                  onClick={() => fetchMarketWarnings(selectedPortfolio.id)}
                   className="text-xs text-white/50 hover:text-white bg-transparent border border-white/10 px-3 py-2 cursor-pointer"
                 >
                   Refresh
@@ -638,7 +665,7 @@ function Portfolio() {
                     className="grid grid-cols-7 gap-4 p-6 border-b border-white/5 bg-black hover:bg-white/[0.02] cursor-pointer transition-all"
                     whileHover={{ x: 5 }}
                     transition={{ type: "spring", stiffness: 400, damping: 10 }}
-                    onClick={() => setSelectedStock(stock)}
+                    onClick={() => navigate(`/ai-analysis?ticker=${encodeURIComponent(stock.ticker)}`)}
                   >
                     <p className="text-white font-medium">{stock.ticker}</p>
                     <p className="text-white/60">{stock.shares}</p>
@@ -859,66 +886,6 @@ function Portfolio() {
           </motion.button>
         </div>
 
-        {/* Market News Warnings */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
-          <div className="border border-white/5 bg-black p-6">
-            <div className="flex items-center justify-between gap-4 mb-5">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-300" strokeWidth={1.5} />
-                <div>
-                  <h3 className="text-sm text-white/70 tracking-wider uppercase">Market Risks</h3>
-                  <p className="text-xs text-white/30 mt-1">Accepted negative warnings from news.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={fetchMarketWarnings}
-                className="text-xs text-white/50 hover:text-white bg-transparent border border-white/10 px-3 py-2 cursor-pointer"
-              >
-                Refresh
-              </button>
-            </div>
-            {marketWarningsLoading && visibleNegativeWarnings.length === 0 ? (
-              <div className="flex items-center gap-3 text-white/40 text-sm py-4">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading market risks...
-              </div>
-            ) : visibleNegativeWarnings.length === 0 ? (
-              <p className="text-white/40 text-sm py-4">No accepted negative warnings yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {visibleNegativeWarnings.map((warning) => (
-                  <MarketWarningCard key={warning.id} warning={warning} tone="negative" />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="border border-white/5 bg-black p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <Sparkles className="w-5 h-5 text-emerald-300" strokeWidth={1.5} />
-              <div>
-                <h3 className="text-sm text-white/70 tracking-wider uppercase">Positive Signals</h3>
-                <p className="text-xs text-white/30 mt-1">Accepted positive warnings from news.</p>
-              </div>
-            </div>
-            {marketWarningsLoading && visiblePositiveWarnings.length === 0 ? (
-              <div className="flex items-center gap-3 text-white/40 text-sm py-4">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading positive signals...
-              </div>
-            ) : visiblePositiveWarnings.length === 0 ? (
-              <p className="text-white/40 text-sm py-4">No accepted positive warnings yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {visiblePositiveWarnings.map((warning) => (
-                  <MarketWarningCard key={warning.id} warning={warning} tone="positive" />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Add Portfolio Inline Form / Dialog */}
         {showAddPortfolio && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center" onClick={() => setShowAddPortfolio(false)}>
@@ -973,9 +940,7 @@ function Portfolio() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-white/5">
             {portfolios.map((portfolio) => {
               const stats = {
-                totalValue: portfolio.total_value || 0,
-                totalGain: portfolio.total_gain_loss || 0,
-                gainPercent: portfolio.total_gain_loss_pct || 0,
+                totalInvested: portfolio.total_invested || 0,
                 holdingsCount: portfolio.holdings_count || 0
               };
 
@@ -1006,31 +971,21 @@ function Portfolio() {
 
                     <div className="space-y-4">
                       <div>
-                        <p className="text-xs text-white/40 mb-1 tracking-wider uppercase">Total Value</p>
+                        <p className="text-xs text-white/40 mb-1 tracking-wider uppercase">Holdings</p>
                         <p className="text-2xl text-white font-light">
-                          {convertAndFormat(stats.totalValue)}
+                          {stats.holdingsCount}
                         </p>
                       </div>
 
                       <div>
-                        <p className="text-xs text-white/40 mb-1 tracking-wider uppercase">Total Gain/Loss</p>
-                        <div className="flex items-center gap-2">
-                          <p className={`text-lg ${stats.totalGain >= 0 ? 'text-white' : 'text-white/60'}`}>
-                            {stats.totalGain >= 0 ? '+' : '-'}{convertAndFormat(Math.abs(stats.totalGain))}
-                          </p>
-                          <span className={`text-sm ${stats.gainPercent >= 0 ? 'text-white/60' : 'text-white/40'}`}>
-                            ({stats.gainPercent >= 0 ? '+' : ''}{stats.gainPercent.toFixed(2)}%)
-                          </span>
-                          {stats.gainPercent >= 0 ? (
-                            <TrendingUp className="w-4 h-4 text-white/40" strokeWidth={1} />
-                          ) : (
-                            <TrendingDown className="w-4 h-4 text-white/40" strokeWidth={1} />
-                          )}
-                        </div>
+                        <p className="text-xs text-white/40 mb-1 tracking-wider uppercase">Cost Basis</p>
+                        <p className="text-lg text-white/70">
+                          {convertAndFormat(stats.totalInvested)}
+                        </p>
                       </div>
 
                       <div className="pt-4 border-t border-white/5">
-                        <p className="text-xs text-white/40 tracking-wider">{stats.holdingsCount} Holdings</p>
+                        <p className="text-xs text-white/40 tracking-wider">Open for live prices and warnings</p>
                       </div>
                     </div>
                   </div>

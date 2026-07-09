@@ -16,3 +16,12 @@ export async function getMarketWarnings(token, limit = 50) {
   });
   return readJsonResponse(res);
 }
+
+export async function getPortfolioWarnings(token, portfolioId, limit = 50) {
+  // Reads the same MongoDB warning records, but asks the backend to filter
+  // negative warnings to symbols in the currently opened portfolio.
+  const res = await fetch(`${API_URL}/api/news/portfolio-warnings/${portfolioId}?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return readJsonResponse(res);
+}

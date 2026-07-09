@@ -1,3 +1,4 @@
+import csv
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List
@@ -14,6 +15,25 @@ except ImportError:
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DATABASE = os.environ.get("MONGO_DATABASE", "atlas")
 MONGO_WARNINGS_COLLECTION = os.environ.get("MONGO_WARNINGS_COLLECTION", "market_warnings")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STOCK_INFO_CSV = os.path.join(BASE_DIR, "data", "stock_info.csv")
+
+
+def _load_known_symbols() -> List[str]:
+    """Load app-supported stock symbols for filtering noisy fallback records."""
+    if not os.path.exists(STOCK_INFO_CSV):
+        return []
+
+    symbols = []
+    with open(STOCK_INFO_CSV, newline="", encoding="utf-8") as csv_file:
+        for row in csv.DictReader(csv_file):
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if symbol:
+                symbols.append(symbol)
+    return symbols
+
+
+KNOWN_SYMBOLS = _load_known_symbols()
 
 
 def get_warnings_collection() -> Collection:
@@ -45,6 +65,7 @@ def get_warnings_collection() -> Collection:
         unique=True,
         name="unique_event_symbol_sentiment",
     )
+    collection.create_index("warning_key", unique=True, sparse=True, name="unique_warning_key")
     collection.create_index([("symbol", 1), ("sentiment", 1), ("accepted", 1)])
     collection.create_index([("created_at", -1)])
     return collection
@@ -65,15 +86,27 @@ def save_accepted_warnings(warnings: Iterable[Dict[str, Any]]) -> int:
             continue
 
         warning["updated_at"] = now
+        warning_key = warning.get("warning_key") or "|".join(
+            [
+                str(warning.get("source_event_id") or ""),
+                str(warning.get("symbol") or ""),
+                str(warning.get("sentiment") or ""),
+            ]
+        )
         operations.append(
             UpdateOne(
                 {
-                    "source_event_id": warning.get("source_event_id"),
-                    "symbol": warning.get("symbol"),
-                    "sentiment": warning.get("sentiment"),
+                    "$or": [
+                        {"warning_key": warning_key},
+                        {
+                            "source_event_id": warning.get("source_event_id"),
+                            "symbol": warning.get("symbol"),
+                            "sentiment": warning.get("sentiment"),
+                        },
+                    ]
                 },
                 {
-                    "$set": warning,
+                    "$set": {**warning, "warning_key": warning_key},
                     "$setOnInsert": {"first_seen_at": now},
                 },
                 upsert=True,
@@ -97,19 +130,22 @@ def get_portfolio_warnings(symbols: List[str], limit: int = 50) -> Dict[str, Lis
     """
     collection = get_warnings_collection()
     owned_symbols = [symbol.upper() for symbol in symbols]
+    known_owned_symbols = [symbol for symbol in owned_symbols if not KNOWN_SYMBOLS or symbol in KNOWN_SYMBOLS]
 
     negative_filter = {
         "accepted": True,
         "sentiment": "negative",
-        "symbol": {"$in": owned_symbols},
+        "symbol": {"$in": known_owned_symbols},
     }
     positive_filter = {
         "accepted": True,
         "sentiment": "positive",
     }
+    if KNOWN_SYMBOLS:
+        positive_filter["symbol"] = {"$in": KNOWN_SYMBOLS}
 
-    negative = list(collection.find(negative_filter).sort("created_at", -1).limit(limit))
-    positive = list(collection.find(positive_filter).sort("created_at", -1).limit(limit))
+    negative = _latest_unique_warnings(collection, negative_filter, limit)
+    positive = _latest_unique_warnings(collection, positive_filter, limit)
 
     return {
         "negative": [_serialize_warning(item) for item in negative],
@@ -127,21 +163,38 @@ def get_market_warnings(limit: int = 50) -> Dict[str, List[Dict[str, Any]]]:
     collection = get_warnings_collection()
 
     base_filter = {"accepted": True}
-    negative = list(
-        collection.find({**base_filter, "sentiment": "negative"})
-        .sort("created_at", -1)
-        .limit(limit)
-    )
-    positive = list(
-        collection.find({**base_filter, "sentiment": "positive"})
-        .sort("created_at", -1)
-        .limit(limit)
-    )
+    if KNOWN_SYMBOLS:
+        base_filter["symbol"] = {"$in": KNOWN_SYMBOLS}
+    negative = _latest_unique_warnings(collection, {**base_filter, "sentiment": "negative"}, limit)
+    positive = _latest_unique_warnings(collection, {**base_filter, "sentiment": "positive"}, limit)
 
     return {
         "negative": [_serialize_warning(item) for item in negative],
         "positive": [_serialize_warning(item) for item in positive],
     }
+
+
+def _latest_unique_warnings(collection: Collection, filter_query: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
+    """
+    Return the newest warning per symbol/sentiment pair.
+
+    This keeps the UI from showing a stack of near-identical cards when several
+    articles repeat the same message about one ticker.
+    """
+    pipeline = [
+        {"$match": filter_query},
+        {"$sort": {"created_at": -1, "updated_at": -1}},
+        {
+            "$group": {
+                "_id": {"symbol": "$symbol", "sentiment": "$sentiment"},
+                "warning": {"$first": "$$ROOT"},
+            }
+        },
+        {"$replaceRoot": {"newRoot": "$warning"}},
+        {"$sort": {"created_at": -1, "updated_at": -1}},
+        {"$limit": limit},
+    ]
+    return list(collection.aggregate(pipeline))
 
 
 def _serialize_warning(warning: Dict[str, Any]) -> Dict[str, Any]:

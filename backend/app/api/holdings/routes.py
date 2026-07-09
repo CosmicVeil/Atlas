@@ -53,6 +53,7 @@ def add_holding(portfolio_id):
 @jwt_required()
 def get_holdings(portfolio_id):
     user_id = get_jwt_identity()
+    include_live_prices = request.args.get('live', 'false').lower() == 'true'
 
     portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user_id).first()
     if not portfolio:
@@ -63,8 +64,13 @@ def get_holdings(portfolio_id):
     total_value = 0
 
     for holding in portfolio.holdings:
-        quote = market_data.get_quote(holding.symbol)
-        current_price = quote['price'] if quote else holding.buy_price  # fall back to buy price if API fails
+        # Keep opening a portfolio fast by default. Live quote calls are slow
+        # because the market data service rate-limits Yahoo requests.
+        if include_live_prices:
+            quote = market_data.get_quote(holding.symbol)
+            current_price = quote['price'] if quote else holding.buy_price
+        else:
+            current_price = holding.buy_price
 
         holding_data = holding.to_dict_with_live_data(current_price)
         result.append(holding_data)

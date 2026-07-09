@@ -38,22 +38,18 @@ services:
 
   redpanda-init:
     image: docker.redpanda.com/redpandadata/redpanda:v24.3.5
+    entrypoint:
+      - /bin/sh
+      - -c
     command:
-      - topic
-      - create
-      - atlas.market.news
-      - -X
-      - brokers=redpanda:29092
-      - --partitions
-      - "1"
-      - --replicas
-      - "1"
-      - --if-not-exists
+      - rpk topic create atlas.market.news -X brokers=redpanda:29092 --partitions 1 --replicas 1 || true
     depends_on:
       redpanda:
         condition: service_healthy
 
   news-streamer:
+    profiles:
+      - docker-news
     build:
       context: ./backend
       dockerfile: Dockerfile.news

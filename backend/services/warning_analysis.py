@@ -1,9 +1,36 @@
+import csv
 import json
+import os
 import re
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from services import ai_service
+
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STOCK_INFO_CSV = os.path.join(BASE_DIR, "data", "stock_info.csv")
+
+
+def _load_known_symbols() -> set:
+    """Load app-supported stock symbols so generic article acronyms are ignored."""
+    symbols = set()
+    if not os.path.exists(STOCK_INFO_CSV):
+        return symbols
+
+    with open(STOCK_INFO_CSV, newline="", encoding="utf-8") as csv_file:
+        for row in csv.DictReader(csv_file):
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if symbol:
+                symbols.add(symbol)
+    return symbols
+
+
+KNOWN_SYMBOLS = _load_known_symbols()
+COMMON_NON_TICKERS = {
+    "A", "AI", "AP", "CEO", "CFO", "ETF", "GDP", "IMD", "IPO", "SEC", "UN", "USA", "USD", "WFH",
+}
 
 
 def _clean_json_text(text: str) -> str:
@@ -25,9 +52,69 @@ def _symbols_from_text(text: str) -> List[str]:
     This is a fallback for when the news API does not send a symbol list. It is
     intentionally simple: real tickers are usually 1-5 uppercase letters.
     """
-    ignore = {"A", "AI", "CEO", "CFO", "ETF", "IPO", "SEC", "USA", "USD"}
     symbols = set(re.findall(r"\b[A-Z]{1,5}\b", text or ""))
-    return sorted(symbol for symbol in symbols if symbol not in ignore)
+    return sorted(symbol for symbol in symbols if _is_valid_symbol(symbol))
+
+
+def _is_valid_symbol(symbol: str) -> bool:
+    """Reject article acronyms, numbers, and symbols outside the app stock universe."""
+    symbol = str(symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z.\-]{0,5}", symbol):
+        return False
+    if symbol in COMMON_NON_TICKERS:
+        return False
+    if KNOWN_SYMBOLS and symbol not in KNOWN_SYMBOLS:
+        return False
+    return True
+
+
+def _short_text(value: Any, max_chars: int = 700) -> str:
+    """Keep AI-facing text compact and readable."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars].rstrip()}..."
+
+
+def _warning_key(symbol: str, sentiment: str, source_event: Dict[str, Any]) -> str:
+    """
+    Create a stable duplicate key for the same stock/sentiment/news story.
+
+    Kafka can replay messages, and news APIs can return the same article again.
+    This key lets MongoDB update the existing warning instead of making another
+    visually identical card.
+    """
+    raw = "|".join(
+        [
+            symbol.upper(),
+            sentiment.lower(),
+            str(source_event.get("link") or ""),
+            str(source_event.get("title") or "").lower().strip(),
+        ]
+    )
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _clean_reasoning(raw_reasoning: Any, symbol: str, sentiment: str, headline: str) -> str:
+    """
+    Turn model output into a concise message that reads well in the UI.
+
+    The card should explain the market signal, why the stock is affected, and
+    what the user should watch. Long model paragraphs get trimmed because they
+    make the portfolio screen noisy.
+    """
+    reasoning = _short_text(raw_reasoning, 520)
+    if not reasoning:
+        direction = "upside signal" if sentiment == "positive" else "risk signal"
+        reasoning = (
+            f"{symbol} has a {direction} from this news item. "
+            f"Review the article details before making any portfolio changes."
+        )
+
+    if headline and symbol not in reasoning:
+        reasoning = f"{symbol}: {reasoning}"
+
+    return reasoning
 
 
 def _normalize_warning(raw: Dict[str, Any], source_event: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,23 +129,31 @@ def _normalize_warning(raw: Dict[str, Any], source_event: Dict[str, Any]) -> Dic
         sentiment = "neutral"
 
     symbol = str(raw.get("symbol") or "").strip().upper()
+    headline = source_event.get("title", "")
     impact_score = raw.get("impact_score", raw.get("impactScore", 50))
     try:
         impact_score = max(0, min(100, int(impact_score)))
     except (TypeError, ValueError):
         impact_score = 50
 
+    accepted = bool(raw.get("accepted", True))
+    accepted_reason = raw.get("accepted_reason") or raw.get("acceptedReason") or "Accepted by the warning analyzer."
+    if not _is_valid_symbol(symbol):
+        accepted = False
+        accepted_reason = "Rejected because the extracted symbol is not a supported stock ticker."
+
     return {
         "source_event_id": source_event.get("id"),
+        "warning_key": _warning_key(symbol, sentiment, source_event),
         "symbol": symbol,
         "company_name": raw.get("company_name") or raw.get("companyName") or symbol,
         "sentiment": sentiment,
         "impact_score": impact_score,
-        "headline": source_event.get("title", ""),
+        "headline": headline,
         "article_url": source_event.get("link", ""),
-        "reasoning": raw.get("reasoning") or raw.get("reason") or "No reasoning was provided.",
-        "accepted": bool(raw.get("accepted", True)),
-        "accepted_reason": raw.get("accepted_reason") or raw.get("acceptedReason") or "Accepted by the warning analyzer.",
+        "reasoning": _clean_reasoning(raw.get("reasoning") or raw.get("reason"), symbol, sentiment, headline),
+        "accepted": accepted,
+        "accepted_reason": accepted_reason,
         "time_horizon": raw.get("time_horizon") or raw.get("timeHorizon") or "near-term",
         "created_at": datetime.now(timezone.utc),
         "raw_warning": raw,
@@ -80,7 +175,7 @@ def _fallback_analysis(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
             news_event.get("article", {}).get("text", ""),
         ]
     )
-    symbols = news_event.get("symbols") or _symbols_from_text(text)
+    symbols = [symbol for symbol in (news_event.get("symbols") or _symbols_from_text(text)) if _is_valid_symbol(symbol)]
     if not symbols:
         return []
 
@@ -103,6 +198,12 @@ def _fallback_analysis(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     raw_warnings = []
     for symbol in symbols:
+        direction = "positive" if sentiment == "positive" else "negative"
+        action = (
+            "This may support upside momentum, but compare it with valuation and earnings risk."
+            if sentiment == "positive"
+            else "This may increase near-term downside risk, so review position size and upcoming catalysts."
+        )
         raw_warnings.append(
             {
                 "symbol": symbol,
@@ -110,8 +211,9 @@ def _fallback_analysis(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "sentiment": sentiment,
                 "impact_score": score,
                 "reasoning": (
-                    f"The article mentions {symbol}. The fallback analyzer found "
-                    f"{positive_hits} positive signal(s) and {negative_hits} negative signal(s)."
+                    f"The article creates a {direction} signal for {symbol}: "
+                    f"it contains {positive_hits} positive cue(s) and {negative_hits} negative cue(s). "
+                    f"{action}"
                 ),
                 "accepted": sentiment != "neutral",
                 "accepted_reason": "Fallback accepted the warning because the article had a directional signal.",
@@ -132,8 +234,9 @@ def analyze_news_event(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
     symbols = news_event.get("symbols") or []
 
     system_prompt = (
-        "You are a market-news risk analyst. Read one news article and identify stocks "
-        "that are meaningfully affected. Return ONLY valid JSON, with no Markdown."
+        "You are a careful market-news analyst for a portfolio app. Your job is to identify "
+        "stocks with a concrete news-driven risk or opportunity, avoid hype, and write concise "
+        "messages a retail investor can understand. Return ONLY valid JSON, with no Markdown."
     )
 
     user_prompt = f"""
@@ -152,7 +255,7 @@ def analyze_news_event(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
           "company_name": "Apple Inc.",
           "sentiment": "positive" | "negative" | "neutral",
           "impact_score": 0-100,
-          "reasoning": "Explain why this article affects this stock.",
+          "reasoning": "2 short sentences: what happened, why it matters for this stock, and what the user should watch next.",
           "accepted": true | false,
           "accepted_reason": "Explain why this warning should or should not be shown.",
           "time_horizon": "intraday" | "near-term" | "long-term"
@@ -165,6 +268,10 @@ def analyze_news_event(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
     - negative means risk/downside warning.
     - positive means opportunity/upside warning.
     - neutral warnings should usually be accepted=false.
+    - Do not repeat the headline as the whole reasoning.
+    - Do not say generic phrases like "could affect the stock" without naming the specific driver.
+    - Prefer one useful warning per affected ticker. If the article is vague, return accepted=false.
+    - Impact score guide: 70-100 major earnings/regulatory/product/customer impact, 40-69 meaningful but limited impact, below 40 usually accepted=false.
     """
 
     response_text = ai_service._call_multiple_models(system_prompt, user_prompt)
