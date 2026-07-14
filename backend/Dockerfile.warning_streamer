@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the services package because the streamer imports the AI analyzer and Mongo store.
 COPY services ./services
+COPY data ./data
 
 # Run the warning consumer: Redpanda news topic -> AI analysis -> MongoDB.
 CMD ["python", "-m", "services.warning_streamer"]

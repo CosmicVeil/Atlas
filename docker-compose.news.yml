@@ -80,6 +80,11 @@ services:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DATABASE: atlas
       MONGO_WARNINGS_COLLECTION: market_warnings
+      # Pass through whichever AI provider is exported by the local shell.
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
     depends_on:
       redpanda-init:
         condition: service_completed_successfully

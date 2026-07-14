@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import os
@@ -14,6 +15,8 @@ from confluent_kafka import KafkaException, Producer
 from services.market_data import get_quote
 
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STOCK_INFO_CSV = os.path.join(BASE_DIR, "data", "stock_info.csv")
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")
 NEWS_API_URL = os.environ.get("NEWS_API_URL", "https://newsdata.io/api/1/market")
 NEWS_API_LANGUAGE = os.environ.get("NEWS_API_LANGUAGE", "en")
@@ -63,6 +66,91 @@ def _as_list(value: Any) -> List[str]:
     if isinstance(value, str):
         return [_clean_text(item) for item in re.split(r"[,|]", value) if _clean_text(item)]
     return [_clean_text(str(value))]
+
+
+def _load_supported_stocks() -> Dict[str, str]:
+    """Load the Atlas ticker universe and its company names from the CSV."""
+    if not os.path.exists(STOCK_INFO_CSV):
+        return {}
+
+    with open(STOCK_INFO_CSV, newline="", encoding="utf-8") as csv_file:
+        return {
+            symbol: _clean_text(row.get("name"))
+            for row in csv.DictReader(csv_file)
+            if (symbol := str(row.get("symbol") or "").strip().upper())
+        }
+
+
+SUPPORTED_STOCKS = _load_supported_stocks()
+SUPPORTED_SYMBOLS = set(SUPPORTED_STOCKS)
+COMPANY_SUFFIX_PATTERN = re.compile(
+    r"\b(?:incorporated|inc|corporation|corp|plc|ltd|limited|company|co|class\s+[a-z]|common\s+stock)\b\.?,?",
+    re.IGNORECASE,
+)
+EXCHANGE_TICKER_PATTERN = re.compile(
+    r"\b(?:NASDAQ|NYSE|NYSEAMERICAN|NYSEARCA|OTC(?:MKTS)?)\s*:\s*[A-Z][A-Z.\-]{0,5}\b",
+    re.IGNORECASE,
+)
+def _normalize_match_text(value: str) -> str:
+    """Normalize company punctuation so CSV names match ordinary article prose."""
+    return _clean_text(re.sub(r"[^A-Za-z0-9]+", " ", value or ""))
+
+
+def _company_aliases(symbol: str) -> List[str]:
+    """Return punctuation-safe full and simplified company names for matching."""
+    company_name = _clean_text(SUPPORTED_STOCKS.get(symbol))
+    simplified_name = _clean_text(COMPANY_SUFFIX_PATTERN.sub(" ", company_name))
+    return list(
+        {
+            normalized_name
+            for name in [company_name, simplified_name]
+            if len(normalized_name := _normalize_match_text(name)) >= 3
+        }
+    )
+
+
+def _symbol_matches_story(symbol: str, story_text: str) -> bool:
+    """Check that a provider ticker actually refers to its supported company."""
+    text_without_exchange_labels = EXCHANGE_TICKER_PATTERN.sub(" ", story_text)
+    normalized_story_text = _normalize_match_text(text_without_exchange_labels)
+
+    # Mentions such as "ex-Amazon executive" do not describe Amazon itself.
+    for company_name in _company_aliases(symbol):
+        normalized_story_text = re.sub(
+            rf"\b(?:ex|former)\s*-?\s*{re.escape(company_name)}\b",
+            " ",
+            normalized_story_text,
+            flags=re.IGNORECASE,
+        )
+
+    # Three-or-more-letter ticker mentions are specific enough to use directly.
+    if len(symbol) >= 3 and re.search(rf"\b{re.escape(symbol)}\b", text_without_exchange_labels, re.IGNORECASE):
+        return True
+
+    return any(
+        re.search(rf"\b{re.escape(company_name)}\b", normalized_story_text, re.IGNORECASE)
+        for company_name in _company_aliases(symbol)
+    )
+
+
+def _supported_symbols(news_item: Dict[str, Any]) -> List[str]:
+    """
+    Keep only provider tickers that Atlas recognizes, in a stable order.
+
+    NewsData's market feed also contains exchange codes and global instruments
+    that are not stocks this application supports. Filtering before scraping
+    keeps unrelated articles out of Kafka and avoids unnecessary web requests.
+    """
+    supported = []
+    seen = set()
+    story_text = _clean_text(f"{news_item.get('title', '')} {news_item.get('description', '')}")
+    raw_symbols = news_item.get("symbol") or news_item.get("symbols") or news_item.get("ticker")
+    for candidate in _as_list(raw_symbols):
+        symbol = candidate.upper()
+        if symbol in SUPPORTED_SYMBOLS and symbol not in seen and _symbol_matches_story(symbol, story_text):
+            supported.append(symbol)
+            seen.add(symbol)
+    return supported
 
 
 def _message_id(article: Dict[str, Any]) -> str:
@@ -176,10 +264,14 @@ def fetch_market_quotes(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
     return quotes
 
 
-def build_news_message(news_item: Dict[str, Any]) -> Dict[str, Any]:
+def build_news_message(news_item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build a Kafka event when a provider item names an Atlas-supported company."""
     link = news_item.get("link") or news_item.get("url") or ""
+    symbols = _supported_symbols(news_item)
+    if not symbols:
+        return None
+
     article = scrape_article(link)
-    symbols = _as_list(news_item.get("symbol") or news_item.get("symbols") or news_item.get("ticker"))
 
     message = {
         "id": "",
@@ -194,6 +286,8 @@ def build_news_message(news_item: Dict[str, Any]) -> Dict[str, Any]:
         "category": _as_list(news_item.get("category")),
         "country": _as_list(news_item.get("country")),
         "market_metadata": news_item,
+        # The consumer uses this flag to reject older or untrusted Kafka events.
+        "source_validated": True,
         "article": article,
         "scraped_at": _utc_now(),
     }
@@ -240,6 +334,9 @@ def publish_market_news(producer: Producer) -> int:
     published = 0
     for raw_item in fetch_market_news():
         message = build_news_message(raw_item)
+        if message is None:
+            print(f"[news-streamer] Skipped unsupported item: {_clean_text(raw_item.get('title'))}")
+            continue
         try:
             producer.produce(
                 KAFKA_TOPIC,

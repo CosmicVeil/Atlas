@@ -31,6 +31,13 @@ KNOWN_SYMBOLS = _load_known_symbols()
 COMMON_NON_TICKERS = {
     "A", "AI", "AP", "CEO", "CFO", "ETF", "GDP", "IMD", "IPO", "SEC", "UN", "USA", "USD", "WFH",
 }
+FALLBACK_MARKET_DRIVER_PATTERN = re.compile(
+    r"\b(?:acquir(?:e|es|ed|ing|ition)|approval|bankruptcy|breach|buyback|contract|cyberattack|debt|"
+    r"dividend|downgrade|earnings?|fda|forecast|guidance|invest(?:ment|or|ors)|investigation|lawsuit|"
+    r"layoffs?|merger|orders?|outlook|partnership|price\s+target|production|profit|rating|recall|"
+    r"regulat(?:e|es|ed|ion|ory)|revenue|sales|settlement|shares?|stock|supply|tariff|upgrade)\b",
+    re.IGNORECASE,
+)
 
 
 def _clean_json_text(text: str) -> str:
@@ -59,11 +66,15 @@ def _symbols_from_text(text: str) -> List[str]:
 def _is_valid_symbol(symbol: str) -> bool:
     """Reject article acronyms, numbers, and symbols outside the app stock universe."""
     symbol = str(symbol or "").strip().upper()
+    # A missing stock universe is a deployment problem, not permission to accept
+    # arbitrary uppercase words from an article as market tickers.
+    if not KNOWN_SYMBOLS:
+        return False
     if not re.fullmatch(r"[A-Z][A-Z.\-]{0,5}", symbol):
         return False
     if symbol in COMMON_NON_TICKERS:
         return False
-    if KNOWN_SYMBOLS and symbol not in KNOWN_SYMBOLS:
+    if symbol not in KNOWN_SYMBOLS:
         return False
     return True
 
@@ -144,6 +155,7 @@ def _normalize_warning(raw: Dict[str, Any], source_event: Dict[str, Any]) -> Dic
 
     return {
         "source_event_id": source_event.get("id"),
+        "source_validated": bool(source_event.get("source_validated")),
         "warning_key": _warning_key(symbol, sentiment, source_event),
         "symbol": symbol,
         "company_name": raw.get("company_name") or raw.get("companyName") or symbol,
@@ -175,6 +187,10 @@ def _fallback_analysis(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
             news_event.get("article", {}).get("text", ""),
         ]
     )
+    if not FALLBACK_MARKET_DRIVER_PATTERN.search(text):
+        print(f"[warning-analyzer] Fallback skipped event {news_event.get('id')}: no market driver.")
+        return []
+
     symbols = [symbol for symbol in (news_event.get("symbols") or _symbols_from_text(text)) if _is_valid_symbol(symbol)]
     if not symbols:
         return []
@@ -230,6 +246,12 @@ def analyze_news_event(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
     The output is a list because one article can affect many stocks. Only
     warnings where accepted=true are saved by the streamer.
     """
+    # Messages produced before the validated producer had no reliable admission
+    # checks. Ignore them instead of letting the fallback heuristic create noise.
+    if not news_event.get("source_validated"):
+        print(f"[warning-analyzer] Skipped unvalidated event {news_event.get('id')}")
+        return []
+
     article_text = (news_event.get("article") or {}).get("text", "")
     symbols = news_event.get("symbols") or []
 
@@ -274,7 +296,10 @@ def analyze_news_event(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
     - Impact score guide: 70-100 major earnings/regulatory/product/customer impact, 40-69 meaningful but limited impact, below 40 usually accepted=false.
     """
 
-    response_text = ai_service._call_multiple_models(system_prompt, user_prompt)
+    # Despite its legacy name, this helper tries Claude, then OpenAI, then NVIDIA.
+    # That makes the streamer use any configured AI provider instead of a
+    # NVIDIA-only consensus workflow.
+    response_text = ai_service._call_claude(system_prompt, user_prompt)
     if response_text:
         try:
             parsed = json.loads(_clean_json_text(response_text))

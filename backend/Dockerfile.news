@@ -9,5 +9,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services ./services
+COPY data ./data
 
 CMD ["python", "-m", "services.news"]

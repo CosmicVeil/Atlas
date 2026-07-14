@@ -134,11 +134,13 @@ def get_portfolio_warnings(symbols: List[str], limit: int = 50) -> Dict[str, Lis
 
     negative_filter = {
         "accepted": True,
+        "source_validated": True,
         "sentiment": "negative",
         "symbol": {"$in": known_owned_symbols},
     }
     positive_filter = {
         "accepted": True,
+        "source_validated": True,
         "sentiment": "positive",
     }
     if KNOWN_SYMBOLS:
@@ -162,7 +164,9 @@ def get_market_warnings(limit: int = 50) -> Dict[str, List[Dict[str, Any]]]:
     """
     collection = get_warnings_collection()
 
-    base_filter = {"accepted": True}
+    # Legacy rows from before source validation remain in MongoDB for debugging,
+    # but only validated warnings are eligible for the website feed.
+    base_filter = {"accepted": True, "source_validated": True}
     if KNOWN_SYMBOLS:
         base_filter["symbol"] = {"$in": KNOWN_SYMBOLS}
     negative = _latest_unique_warnings(collection, {**base_filter, "sentiment": "negative"}, limit)
