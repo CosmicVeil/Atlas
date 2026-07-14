@@ -28,7 +28,7 @@ KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "atlas.market.news")
 STREAM_INTERVAL_SECONDS = int(os.environ.get("STREAM_INTERVAL_SECONDS", "86400"))
 ARTICLE_TIMEOUT_SECONDS = int(os.environ.get("ARTICLE_TIMEOUT_SECONDS", "12"))
 MAX_ARTICLE_CHARS = int(os.environ.get("MAX_ARTICLE_CHARS", "12000"))
-MAX_NEWS_PAGES = int(os.environ.get("MAX_NEWS_PAGES", "1"))
+MAX_NEWS_PAGES = int(os.environ.get("MAX_NEWS_PAGES", "2"))
 
 USER_AGENT = os.environ.get(
     "NEWS_USER_AGENT",

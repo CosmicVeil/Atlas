@@ -299,7 +299,7 @@ def analyze_news_event(news_event: Dict[str, Any]) -> List[Dict[str, Any]]:
     # Despite its legacy name, this helper tries Claude, then OpenAI, then NVIDIA.
     # That makes the streamer use any configured AI provider instead of a
     # NVIDIA-only consensus workflow.
-    response_text = ai_service._call_claude(system_prompt, user_prompt)
+    response_text = ai_service._call_multiple_models(system_prompt, user_prompt)
     if response_text:
         try:
             parsed = json.loads(_clean_json_text(response_text))
