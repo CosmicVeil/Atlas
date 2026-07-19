@@ -11,6 +11,7 @@ from app.models.holding import Holding
 from app.models.Stock import Stock
 from services import market_data
 from services import ai_service
+import pathlib
 
 ai_bp = Blueprint('ai', __name__)
 
@@ -448,7 +449,9 @@ analysis_progress = {
 
 def run_batch_analysis(app_context):
     global analysis_progress
-    log_file = r"c:\Users\varun\Desktop\Atlas-main\backend\batch_debug.log"
+    
+    log_file = pathlib.Path(__file__).parent.parent.parent.parent / "batch_debug.log"
+
     with open(log_file, "w") as lf:
         lf.write("Thread started\n")
         lf.flush()

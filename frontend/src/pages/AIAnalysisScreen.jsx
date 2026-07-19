@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Badge } from "../components/ui/badge";
 import { motion } from "motion/react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { TrendingUp, TrendingDown, Star, AlertTriangle, ArrowUpRight, ArrowDownRight, Calendar, RefreshCw, Loader2, DollarSign, Brain, Search, Eye, X, CheckCircle, XCircle, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Star, AlertTriangle, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar, RefreshCw, Loader2, DollarSign, Brain, Search, Eye, X, CheckCircle, XCircle, Minus } from "lucide-react";
+import { Alert, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";

@@ -5,6 +5,7 @@ from app.extensions import db
 from app.models.holding import Holding
 from app.models.portfolio import Portfolio
 from services import market_data
+from math import isfinite
 
 holdings_bp = Blueprint('holdings', __name__)
 
@@ -20,11 +21,22 @@ def add_holding(portfolio_id):
     if not portfolio:
         return jsonify({'error': 'Portfolio not found'}), 404
 
-    data = request.get_json()
-    symbol = data.get('symbol')
-    shares = data.get('shares')
-    buy_price = data.get('buy_price')
-    date_bought = data.get('date_bought')  # expects "YYYY-MM-DD"
+
+    try:
+        data = request.get_json()
+        symbol = data.get('symbol')
+        shares = float(data.get('shares'))
+        buy_price = float(data.get('buy_price'))
+        date_bought = datetime.strptime(data.get('date_bought'), '%Y-%m-%d').date()  # expects "YYYY-MM-DD"
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid data format'}), 400
+    
+
+    if not isfinite(shares) or shares <= 0:
+        return jsonify({"error": "Shares must be a positive number."}), 400
+
+    if not isfinite(buy_price) or buy_price <= 0:   
+        return jsonify({"error": "Buy price must be a positive number."}), 400
 
     # basic validation
     if not all([symbol, shares, buy_price, date_bought]):
@@ -38,9 +50,9 @@ def add_holding(portfolio_id):
     holding = Holding(
         portfolio_id=portfolio_id,
         symbol=symbol.upper(),
-        shares=float(shares),
-        buy_price=float(buy_price),
-        date_bought=datetime.strptime(date_bought, '%Y-%m-%d').date()
+        shares=shares,
+        buy_price=buy_price,
+        date_bought=date_bought
     )
     db.session.add(holding)
     db.session.commit()

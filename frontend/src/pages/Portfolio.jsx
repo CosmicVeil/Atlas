@@ -316,7 +316,6 @@ function Portfolio() {
 
   // Render view: Stock Detail
   if (selectedStock && selectedPortfolio) {
-    const stats = calculateStats(selectedPortfolio);
     const totalValue = selectedStock.shares * selectedStock.currentPrice;
     const totalCost = selectedStock.shares * selectedStock.buyPrice;
     const gain = totalValue - totalCost;
