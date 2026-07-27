@@ -1,7 +1,7 @@
 # Remove Personalized Investment Suggestions
 
 Date: 2026-07-27
-Status: Approved direction, awaiting written-spec review
+Status: Approved
 
 ## Context
 
@@ -98,7 +98,9 @@ Frontend tests will verify that:
 - the portfolio page contains no personalized recommendation controls;
 - the AI page contains no budget-allocation controls;
 - the educational-use notice appears with AI research;
-- the production build and lint checks pass.
+- the production build and focused regression tests pass.
+
+The repository-wide lint backlog predates this change. A separate production-hardening plan will resolve it rather than mixing unrelated page refactors into this feature removal.
 
 ## Acceptance Criteria
 
@@ -106,7 +108,7 @@ Frontend tests will verify that:
 - A user cannot request portfolio or budget recommendations through the interface or API.
 - AI provider requests contain no portfolio data.
 - Atlas displays educational-use notices with AI research.
-- Backend tests, frontend tests, lint, and the production build pass.
+- Backend tests, frontend regression tests, and the production build pass.
 
 ## Rollback
 
