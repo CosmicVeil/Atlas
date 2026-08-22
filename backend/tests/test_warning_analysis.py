@@ -15,11 +15,10 @@ class SupportedTickerTests(unittest.TestCase):
         with patch.object(warning_analysis, "KNOWN_SYMBOLS", set()):
             self.assertFalse(warning_analysis._is_valid_symbol("BCOM"))
 
-    @patch("services.warning_analysis.ai_service._call_claude")
-    @patch("services.warning_analysis.ai_service._call_multiple_models", return_value=None)
-    def test_uses_provider_priority_call_for_validated_event(self, mock_consensus, mock_provider):
+    @patch("services.warning_analysis.ai_service._call_multiple_models")
+    def test_uses_consensus_provider_for_validated_event(self, mock_consensus):
         """A validated event must use the configured AI provider before heuristic fallback."""
-        mock_provider.return_value = json.dumps(
+        mock_consensus.return_value = json.dumps(
             {
                 "warnings": [
                     {
@@ -50,8 +49,7 @@ class SupportedTickerTests(unittest.TestCase):
 
         self.assertEqual(len(warnings), 1)
         self.assertEqual(warnings[0]["symbol"], "NVDA")
-        mock_provider.assert_called_once()
-        mock_consensus.assert_not_called()
+        mock_consensus.assert_called_once()
 
     @patch("services.warning_analysis.ai_service._call_multiple_models", return_value=None)
     def test_rejects_unvalidated_event_before_fallback_analysis(self, mock_consensus):
@@ -67,8 +65,8 @@ class SupportedTickerTests(unittest.TestCase):
 
         self.assertEqual(warnings, [])
 
-    @patch("services.warning_analysis.ai_service._call_claude", return_value=None)
-    def test_fallback_rejects_company_story_without_a_market_driver(self, mock_provider):
+    @patch("services.warning_analysis.ai_service._call_multiple_models", return_value=None)
+    def test_fallback_rejects_company_story_without_a_market_driver(self, mock_consensus):
         """Fallback analysis must not call a softball result an Apple stock warning."""
         warnings = warning_analysis.analyze_news_event(
             {
@@ -81,7 +79,7 @@ class SupportedTickerTests(unittest.TestCase):
         )
 
         self.assertEqual(warnings, [])
-        mock_provider.assert_called_once()
+        mock_consensus.assert_called_once()
 
 
 if __name__ == "__main__":

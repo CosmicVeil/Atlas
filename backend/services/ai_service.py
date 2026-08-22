@@ -28,7 +28,10 @@ CLAUDE_MODEL = "claude-3-5-sonnet-20241022"
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
 NVIDIA_API_KEY = os.environ.get('NVIDIA_API_KEY')
-NVIDIA_MODEL = "deepseek-ai/deepseek-v4-pro"
+NVIDIA_MODEL = os.environ.get(
+    'NVIDIA_MODEL',
+    'nvidia/nemotron-3.5-lightning-30b-a3b',
+)
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
@@ -54,7 +57,7 @@ def _call_nvidia(system_prompt, user_prompt):
         ],
         "temperature": 0.2,
         "max_tokens": 1500,
-        "chat_template_kwargs": {"thinking": False}
+        "chat_template_kwargs": {"enable_thinking": False}
     }
 
     try:
@@ -219,6 +222,8 @@ def analyze_stock(stock_info, portfolio_context=None):
         "You must respond ONLY with a single JSON block. Do not include any conversational text before or after the JSON."
     )
 
+
+    #TODO: Add the latest news to the user prompt
     user_prompt = f"""
     Analyze the following stock:
     Ticker: {ticker}

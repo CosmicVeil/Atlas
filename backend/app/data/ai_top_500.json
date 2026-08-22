@@ -256,12 +256,7 @@
       "recommendation": "hold",
       "confidence": 85,
       "reasoning": "AbbVie (ABBV) exhibits a neutral outlook based on its current financial profile. Trading at $100.59 with a P/E ratio of 16.62, the stock demonstrates robust fundamental metrics. We recommend a HOLD stance for long term growth.",
-      "keyPoints": [
-        "Solid competitive position within the Biotechnology market.",
-        "Healthy EPS of $6.05 demonstrates core profitability.",
-        "Attractive dividend yield of 4.24% provides passive income stability.",
-        "Relatively low P/E ratio of 16.62 suggests favorable valuation vs. peers."
-      ],
+      "keyPoints": [],
       "riskLevel": "medium",
       "potentialReturn": 0.0
     },
@@ -331,5 +326,5 @@
       "potentialReturn": 0.0
     }
   ],
-  "lastUpdated": "2026-07-18T19:51:32.865973"
+  "lastUpdated": "2026-08-22T15:57:47.899207"
 }
