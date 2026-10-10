@@ -62,6 +62,24 @@ docker compose --profile docker-news -f docker-compose.news.yml up --build -d wa
 docker compose --profile docker-news -f docker-compose.news.yml run --build --rm -e NEWS_STREAM_MODE=once news-streamer
 ```
 
+### Skipping already-published articles
+
+The producer records published and unsupported articles in MongoDB at
+`<MONGO_DATABASE>.<NEWS_SEEN_COLLECTION>`. The collection defaults to
+`atlas.news_seen_articles`; set `NEWS_SEEN_COLLECTION` in `backend/.env` to override it.
+Records use NewsData's `article_id` when available and the generated message ID otherwise.
+
+One-shot runs skip those records and follow NewsData's `nextPage` until
+`NEWS_API_SIZE` new articles are queued, there is no next page, or `MAX_NEWS_PAGES`
+pages have been read (the default is 5). Published articles are recorded only after
+Redpanda confirms delivery, so failed deliveries are retried on the next run.
+Unsupported articles are recorded when skipped so they are not processed again.
+
+If MongoDB is unreachable, the producer logs a warning and continues without memory,
+which can republish the latest articles. Each run logs how many articles were new,
+unsupported, and skipped as already seen. To reset only this memory, drop the
+`<MONGO_DATABASE>.<NEWS_SEEN_COLLECTION>` collection in MongoDB.
+
 Rebuild the containers after changing Python code, the model, or Docker configuration:
 
 ```bash
