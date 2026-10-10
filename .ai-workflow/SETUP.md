@@ -121,7 +121,7 @@ python3 .ai-workflow/pipeline.py --doctor
 
 The tests use fake AI CLIs and real temporary Git worktrees. They cover isolation, the fix-loop limit, failing-check gating, invalid reviews, dirty checkouts, resuming, per-check `cwd`, and the bug workflow: diagnosis before planning, the diagnosis report reaching the planner, the test-paths guard, and empty reports. They test the runner, not model quality.
 
-`claude_model` is `opus`; `codex_model` is `null`, which uses the Codex CLI default. Larger models use more of your plan allowance.
+`claude_model` is `opus`. Codex uses `codex_model` `gpt-6-astra` with `codex_reasoning_effort` `high`. The runner starts Codex with `--ignore-user-config`, so `~/.codex/config.toml` is not read; set the model and effort here. Leaving either `null` falls back to the Codex CLI default, which is a different model with no reasoning. Larger models and higher effort use more of your plan allowance.
 
 This setup uses `claude -p` without `--bare`, because bare mode does not read subscription login. CLI flags can change; re-run the doctor and tests after upgrades.
 

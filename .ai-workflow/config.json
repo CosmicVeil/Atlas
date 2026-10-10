@@ -81,5 +81,6 @@
   ],
   "constraints": "Atlas layout: frontend/ (React 19 + Vite + Tailwind/MUI/Radix; pages in src/pages, shared components in src/components with primitives in src/components/ui, API clients in src/api, context in src/context; tests in frontend/tests are node:test .mjs files run with `node --test`) and backend/ (Flask app package in backend/app with API blueprints in app/api/<area>, SQLAlchemy models in app/models, config in app/config.py; market news, warning analysis, AI and market-data services in backend/services; unittest tests in backend/tests that import modules like `from services import news`; entry point backend/wsgi.py). Keep changes scoped to the task. Backend tests must be offline: mock NewsData, NVIDIA, Alpha Vantage and other HTTP calls, Kafka/Redpanda producers and consumers, and MongoDB. Do not start Docker, Redpanda or MongoDB, do not call live APIs, and do not read, create or modify .env files or real API keys. Frontend lint has pre-existing errors: do not add new lint errors in files you touch, and do not mass-fix unrelated lint. Match the existing visual language and component conventions. Never weaken, skip, or delete existing test assertions to get a pass; if a test is genuinely obsolete, explain why before changing it.",
   "claude_model": "opus",
-  "codex_model": null
+  "codex_model": "gpt-6-astra",
+  "codex_reasoning_effort": "high"
 }
