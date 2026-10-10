@@ -44,15 +44,15 @@ export async function getBudgetSuggestions(token, budget, portfolioId = null) {
   return res.json();
 }
 
-export async function getTop500Analysis(token) {
-  const res = await fetch(`${API_URL}/api/ai/top-500`, {
+export async function getTop1000Analysis(token) {
+  const res = await fetch(`${API_URL}/api/ai/top-1000`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   return res.json();
 }
 
-export async function refreshTop500(token) {
-  const res = await fetch(`${API_URL}/api/ai/top-500/refresh`, {
+export async function refreshTop1000(token) {
+  const res = await fetch(`${API_URL}/api/ai/top-1000/refresh`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
   });

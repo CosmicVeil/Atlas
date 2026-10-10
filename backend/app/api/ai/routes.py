@@ -16,7 +16,7 @@ import pathlib
 ai_bp = Blueprint('ai', __name__)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
-CACHE_FILE = os.path.join(DATA_DIR, 'ai_top_500.json')
+CACHE_FILE = os.path.join(DATA_DIR, 'ai_top_1000.json')
 
 
 def _get_portfolio_context(portfolio_id, user_id):
@@ -178,10 +178,10 @@ def _update_with_live_quotes(cached_data):
         list(executor.map(get_and_update, all_stocks))
 
 
-@ai_bp.route('/top-500', methods=['GET'])
+@ai_bp.route('/top-1000', methods=['GET'])
 @jwt_required()
-def get_top_500():
-    """Returns top 500 stocks analysis (best and worst stocks to avoid)."""
+def get_top_1000():
+    """Returns top 1000 stocks analysis (best and worst stocks to avoid)."""
     cached_data = None
     needs_rebuild = False
 
@@ -203,12 +203,12 @@ def get_top_500():
                             print(f"[CACHE] DB has newer updates ({newest_stock.last_updated} > {last_updated}). Rebuilding cache...")
                             needs_rebuild = True
         except Exception as e:
-            print(f"Error reading S&P 500 AI cache: {e}")
+            print(f"Error reading top 1000 AI cache: {e}")
             needs_rebuild = True
 
     if not cached_data:
         # No cache exists at all; generate it synchronously
-        cached_data = _generate_and_cache_top_500()
+        cached_data = _generate_and_cache_top_1000()
     elif needs_rebuild:
         # Cache is stale; rebuild in the background
         print("[CACHE] Cache is stale. Rebuilding in background thread...")
@@ -218,7 +218,7 @@ def get_top_500():
         def run_in_context():
             with app.app_context():
                 try:
-                    _generate_and_cache_top_500()
+                    _generate_and_cache_top_1000()
                 except Exception as e:
                     print(f"Error rebuilding cache in background: {e}")
         
@@ -229,18 +229,18 @@ def get_top_500():
     return jsonify(cached_data), 200
 
 
-@ai_bp.route('/top-500/refresh', methods=['POST'])
+@ai_bp.route('/top-1000/refresh', methods=['POST'])
 @jwt_required()
-def refresh_top_500():
-    """Regenerates the cached top 500 analysis and returns it."""
-    data = _generate_and_cache_top_500()
+def refresh_top_1000():
+    """Regenerates the cached top 1000 analysis and returns it."""
+    data = _generate_and_cache_top_1000()
     _update_with_live_quotes(data)
     return jsonify(data), 200
 
 
 
-def _generate_and_cache_top_500():
-    """Internal helper to generate AI recommendations for top 500 stocks and cache it."""
+def _generate_and_cache_top_1000():
+    """Internal helper to generate AI recommendations for top 1000 stocks and cache it."""
     existing_analyses = {}
     if os.path.exists(CACHE_FILE):
         try:
@@ -316,7 +316,7 @@ def _generate_and_cache_top_500():
                 'potentialReturn': potential_val
             })
         except Exception as e:
-            print(f"Error processing stock {stock.symbol} for top 500: {e}")
+            print(f"Error processing stock {stock.symbol} for top 1000: {e}")
 
     if all_stocks_data:
         # Sort and filter for recommended list
@@ -430,7 +430,7 @@ def _generate_and_cache_top_500():
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(cache_data, f, indent=2)
     except Exception as e:
-        print(f"Error caching top 500 AI analysis: {e}")
+        print(f"Error caching top 1000 AI analysis: {e}")
 
     return cache_data
 

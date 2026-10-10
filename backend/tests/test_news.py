@@ -131,18 +131,40 @@ class BuildNewsMessageTests(unittest.TestCase):
     @patch("services.news.scrape_article")
     def test_rejects_exchange_code_attached_to_another_company_story(self, mock_scrape, mock_quotes):
         """An exchange label such as NASDAQ: ZG must not become an NDAQ warning."""
-        message = news.build_news_message(
-            {
-                "title": "NASDAQ: ZG investor alert for Zillow Group shareholders",
-                "description": "A law firm announced a deadline for Zillow investors.",
-                "link": "https://example.com/article",
-                "symbol": ["ndaq", "zg"],
-            }
-        )
+        # ZG is pinned as unsupported so this test does not depend on the stock list.
+        with patch.object(news, "SUPPORTED_SYMBOLS", news.SUPPORTED_SYMBOLS - {"ZG"}):
+            message = news.build_news_message(
+                {
+                    "title": "NASDAQ: ZG investor alert for Zillow Group shareholders",
+                    "description": "A law firm announced a deadline for Zillow investors.",
+                    "link": "https://example.com/article",
+                    "symbol": ["ndaq", "zg"],
+                }
+            )
 
         self.assertIsNone(message)
         mock_scrape.assert_not_called()
         mock_quotes.assert_not_called()
+
+    @patch("services.news.fetch_market_quotes", return_value={})
+    @patch(
+        "services.news.scrape_article",
+        return_value={"url": "https://example.com/article", "domain": "example.com", "text": "", "scrape_error": ""},
+    )
+    def test_supported_story_company_keeps_only_its_own_symbol(self, mock_scrape, mock_quotes):
+        """When the story's company is supported, the exchange label still adds no NDAQ symbol."""
+        with patch.object(news, "SUPPORTED_SYMBOLS", news.SUPPORTED_SYMBOLS | {"ZG", "NDAQ"}), \
+                patch.dict(news.SUPPORTED_STOCKS, {"ZG": "Zillow Group, Inc.", "NDAQ": "Nasdaq, Inc."}):
+            message = news.build_news_message(
+                {
+                    "title": "NASDAQ: ZG investor alert for Zillow Group shareholders",
+                    "description": "A law firm announced a deadline for Zillow investors.",
+                    "link": "https://example.com/article",
+                    "symbol": ["ndaq", "zg"],
+                }
+            )
+
+        self.assertEqual(message["symbols"], ["ZG"])
 
     @patch("services.news.fetch_market_quotes")
     @patch("services.news.scrape_article")
@@ -345,7 +367,7 @@ class PublishMarketNewsMemoryTests(unittest.TestCase):
         original_collection = os.environ.pop("NEWS_SEEN_COLLECTION", None)
         try:
             importlib.reload(news)
-            self.assertEqual(news.MAX_NEWS_PAGES, 5)
+            self.assertEqual(news.MAX_NEWS_PAGES, 10)
             self.assertEqual(news.NEWS_SEEN_COLLECTION, "news_seen_articles")
         finally:
             if original_max is not None:

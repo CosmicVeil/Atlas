@@ -79,11 +79,16 @@ def _load_cache():
 
 
 def _get_cached_symbol(symbol):
-    """Return cached row for a symbol (any date). None if not found."""
+    """
+    Return the cached row for a symbol (any date). None if not found.
+
+    Rows with no date only list the symbol, name, sector and industry; their
+    details have not been fetched yet, so they count as not cached.
+    """
     cache = _load_cache()
     for row in cache:
         if row.get('symbol', '').upper() == symbol.upper():
-            return row
+            return row if row.get('date') else None
     return None
 
 
@@ -369,7 +374,7 @@ def get_full_stock_info(symbol):
 
 def write_market_data():
     """
-    Fetch every S&P 500 stock and write to CSV.
+    Fetch every top 1000 stock and write to CSV.
     Already-cached stocks are skipped (no API call).
     Uncached stocks are fetched and added.
     Run daily until the CSV is full.
@@ -390,10 +395,10 @@ def read_market_data():
     return _load_cache()
 
 
-# ── S&P 500 list helper ──
+# ── Top 1000 list helper ──
 
 def getNamesOfStocks():
-    """Return the list of S&P 500 tickers from constituents.csv."""
+    """Return the list of top 1000 tickers from constituents.csv."""
     file_path = os.path.join(DATA_DIR, 'constituents.csv')
     names = []
     if not os.path.exists(file_path):
@@ -414,19 +419,23 @@ def getNamesOfStocks():
 # ── DB seeding (called inside create_app only) ──
 
 def seed_database_stocks():
-    """Seed the SQLite database with S&P 500 companies. Called once at startup."""
+    """
+    Seed the SQLite database with the top 1000 companies. Called at startup.
+
+    Only symbols missing from the database are added, so existing databases
+    pick up stocks newly added to constituents.csv.
+    """
     from app.extensions import db
     from app.models.Stock import Stock
     import random
 
-    if Stock.query.first():
-        return
-
-    print("Seeding database with S&P 500 stocks...")
+    existing_symbols = {symbol for (symbol,) in db.session.query(Stock.symbol).all()}
     file_path = os.path.join(DATA_DIR, 'constituents.csv')
     if not os.path.exists(file_path):
         print(f"Constituents file not found at {file_path}")
         return
+
+    added = 0
 
     with open(file_path, newline='', encoding='utf-8') as csvfile:
         reader = csv.reader(csvfile)
@@ -439,6 +448,9 @@ def seed_database_stocks():
             if not row or len(row) < 4:
                 continue
             symbol = row[0].strip().upper()
+            if symbol in existing_symbols:
+                continue
+            existing_symbols.add(symbol)
             name = row[1].strip()
             sector = row[2].strip()
             industry = row[3].strip()
@@ -479,10 +491,14 @@ def seed_database_stocks():
                 description=description
             )
             db.session.add(stock)
+            added += 1
+
+    if not added:
+        return
 
     try:
         db.session.commit()
-        print("Successfully seeded S&P 500 stocks.")
+        print(f"Successfully seeded {added} top 1000 stock(s).")
     except Exception as e:
         db.session.rollback()
         print(f"Error seeding stocks: {e}")

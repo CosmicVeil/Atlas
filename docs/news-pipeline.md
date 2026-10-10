@@ -71,7 +71,7 @@ Records use NewsData's `article_id` when available and the generated message ID 
 
 One-shot runs skip those records and follow NewsData's `nextPage` until
 `NEWS_API_SIZE` new articles are queued, there is no next page, or `MAX_NEWS_PAGES`
-pages have been read (the default is 5). Published articles are recorded only after
+pages have been read (the default is 10). Published articles are recorded only after
 Redpanda confirms delivery, so failed deliveries are retried on the next run.
 Unsupported articles are recorded when skipped so they are not processed again.
 

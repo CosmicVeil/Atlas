@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
-import { getTop500Analysis, refreshTop500, getBudgetSuggestions, analyzeStock } from "../api/ai";
+import { getTop1000Analysis, refreshTop1000, getBudgetSuggestions, analyzeStock } from "../api/ai";
 import { getPortfolios } from "../api/portfolio";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -97,7 +97,7 @@ function AIAnalysisScreen() {
 
   useEffect(() => {
     if (token) {
-      loadTop500();
+      loadTop1000();
       loadPortfolios();
     }
   }, [token]);
@@ -111,10 +111,10 @@ function AIAnalysisScreen() {
     handleSearchAnalyze(null, ticker);
   }, [token, searchParams]);
 
-  async function loadTop500() {
+  async function loadTop1000() {
     setIsLoading(true);
     try {
-      const data = await getTop500Analysis(token);
+      const data = await getTop1000Analysis(token);
       if (data && !data.error) {
         setRecommendedStocks(data.recommended || []);
         setWorstStocks(data.worst || []);
@@ -130,7 +130,7 @@ function AIAnalysisScreen() {
         }
       }
     } catch (e) {
-      console.error("Error loading top 500 stocks:", e);
+      console.error("Error loading top 1000 stocks:", e);
     } finally {
       setIsLoading(false);
     }
@@ -139,7 +139,7 @@ function AIAnalysisScreen() {
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
-      const data = await refreshTop500(token);
+      const data = await refreshTop1000(token);
       if (data && !data.error) {
         setRecommendedStocks(data.recommended || []);
         setWorstStocks(data.worst || []);
@@ -155,7 +155,7 @@ function AIAnalysisScreen() {
         }
       }
     } catch (e) {
-      console.error("Error refreshing top 500 stocks:", e);
+      console.error("Error refreshing top 1000 stocks:", e);
     } finally {
       setIsRefreshing(false);
     }
@@ -327,7 +327,7 @@ function AIAnalysisScreen() {
             Last updated: {lastUpdated || "Loading..."}
           </div>
           <p className="text-white/60">
-            AI-powered analysis of the top 500 stocks, updated daily with intelligent model insights.
+            AI-powered analysis of the top 1000 stocks, updated daily with intelligent model insights.
           </p>
         </div>
 

@@ -117,7 +117,7 @@ function Home() {
               <Brain className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
               <h3 className="text-xl text-white mb-3 tracking-wide">AI Market Analysis</h3>
               <p className="text-sm text-white/40 leading-relaxed">
-                Daily analysis of top 500 stocks with recommendations and risk assessment.
+                Daily analysis of top 1000 stocks with recommendations and risk assessment.
               </p>
             </div>
           </motion.div>
