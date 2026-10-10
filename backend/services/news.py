@@ -14,6 +14,11 @@ from confluent_kafka import KafkaException, Producer
 
 from services.market_data import get_quote
 
+try:
+    from pymongo import MongoClient
+except ImportError:  # pragma: no cover - production dependency is installed by Dockerfile.news
+    MongoClient = None
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STOCK_INFO_CSV = os.path.join(BASE_DIR, "data", "stock_info.csv")
@@ -28,7 +33,11 @@ KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "atlas.market.news")
 STREAM_INTERVAL_SECONDS = int(os.environ.get("STREAM_INTERVAL_SECONDS", "60"))
 ARTICLE_TIMEOUT_SECONDS = int(os.environ.get("ARTICLE_TIMEOUT_SECONDS", "12"))
 MAX_ARTICLE_CHARS = int(os.environ.get("MAX_ARTICLE_CHARS", "12000"))
-MAX_NEWS_PAGES = int(os.environ.get("MAX_NEWS_PAGES", "2"))
+MAX_NEWS_PAGES = int(os.environ.get("MAX_NEWS_PAGES", "5"))
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+MONGO_DATABASE = os.environ.get("MONGO_DATABASE", "atlas")
+NEWS_SEEN_COLLECTION = os.environ.get("NEWS_SEEN_COLLECTION", "news_seen_articles")
+_mongo_client = None
 
 USER_AGENT = os.environ.get(
     "NEWS_USER_AGENT",
@@ -162,6 +171,74 @@ def _message_id(article: Dict[str, Any]) -> str:
         ]
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _seen_key(news_item: Dict[str, Any]) -> str:
+    article_id = news_item.get("article_id")
+    if article_id is not None and str(article_id).strip():
+        return str(article_id)
+    return _message_id(
+        {
+            "link": news_item.get("link") or news_item.get("url") or "",
+            "title": _clean_text(news_item.get("title")),
+            "published_at": news_item.get("pubDate")
+            or news_item.get("pub_date")
+            or news_item.get("published_at")
+            or "",
+        }
+    )
+
+
+def _mongo_warning(exc: Any) -> None:
+    print(
+        f"[news-streamer] Warning: MongoDB unavailable at {MONGO_URI} ({exc}); "
+        "seen-article memory disabled, already-published articles may be sent again."
+    )
+
+
+def get_seen_collection():
+    global _mongo_client
+    if MongoClient is None:
+        _mongo_warning("pymongo is not installed")
+        return None
+    try:
+        if _mongo_client is None:
+            _mongo_client = MongoClient(
+                MONGO_URI, serverSelectionTimeoutMS=3000, connectTimeoutMS=3000
+            )
+        _mongo_client.admin.command("ping")
+        return _mongo_client[MONGO_DATABASE][NEWS_SEEN_COLLECTION]
+    except Exception as exc:
+        if _mongo_client is not None:
+            try:
+                _mongo_client.close()
+            except Exception:
+                pass
+            finally:
+                _mongo_client = None
+        _mongo_warning(exc)
+        return None
+
+
+def _is_seen(collection, key: str) -> Optional[bool]:
+    try:
+        return collection.find_one({"_id": key}) is not None
+    except Exception as exc:
+        _mongo_warning(exc)
+        return None
+
+
+def _mark_seen(collection, key: str, status: str, title: str) -> None:
+    if collection is None:
+        return
+    try:
+        collection.update_one(
+            {"_id": key},
+            {"$set": {"status": status, "title": title, "seen_at": _utc_now()}},
+            upsert=True,
+        )
+    except Exception as exc:
+        _mongo_warning(exc)
 
 
 def _extract_article_text(html: str) -> str:
@@ -332,20 +409,47 @@ def _delivery_report(error, message) -> None:
 
 def publish_market_news(producer: Producer) -> int:
     published = 0
+    unsupported = 0
+    skipped_seen = 0
+    queued_keys = set()
+    seen = get_seen_collection()
     for raw_item in fetch_market_news():
+        seen_key = _seen_key(raw_item)
+        if seen_key in queued_keys:
+            skipped_seen += 1
+            continue
+        if seen is not None:
+            already_seen = _is_seen(seen, seen_key)
+            if already_seen is None:
+                seen = None
+            elif already_seen:
+                skipped_seen += 1
+                continue
+
         message = build_news_message(raw_item)
         if message is None:
-            print(f"[news-streamer] Skipped unsupported item: {_clean_text(raw_item.get('title'))}")
+            title = _clean_text(raw_item.get("title"))
+            print(f"[news-streamer] Skipped unsupported item: {title}")
+            _mark_seen(seen, seen_key, "unsupported", title)
+            queued_keys.add(seen_key)
+            unsupported += 1
             continue
+
+        def delivery_callback(error, delivered_message, key=seen_key, title=message["title"], collection=seen):
+            _delivery_report(error, delivered_message)
+            if error is None:
+                _mark_seen(collection, key, "published", title)
+
         try:
             producer.produce(
                 KAFKA_TOPIC,
                 key=message["id"],
                 value=json.dumps(message, ensure_ascii=False).encode("utf-8"),
-                callback=_delivery_report,
+                callback=delivery_callback,
             )
             producer.poll(0)
             published += 1
+            queued_keys.add(seen_key)
             print(f"[news-streamer] Queued {message['id']} - {message['title']}")
         except BufferError:
             producer.flush()
@@ -353,15 +457,24 @@ def publish_market_news(producer: Producer) -> int:
                 KAFKA_TOPIC,
                 key=message["id"],
                 value=json.dumps(message, ensure_ascii=False).encode("utf-8"),
-                callback=_delivery_report,
+                callback=delivery_callback,
             )
             published += 1
+            queued_keys.add(seen_key)
         except Exception as exc:
             print(f"[news-streamer] Failed to queue article {message['id']}: {exc}")
+
+        if published >= NEWS_API_SIZE:
+            break
 
     remaining = producer.flush(timeout=30)
     if remaining:
         print(f"[news-streamer] {remaining} message(s) were not delivered before timeout.")
+    print(
+        f"[news-streamer] {published} new article(s) queued, "
+        f"{unsupported} new unsupported item(s) skipped, "
+        f"{skipped_seen} skipped as already seen."
+    )
     return published
 
 
