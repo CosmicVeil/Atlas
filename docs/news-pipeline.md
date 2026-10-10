@@ -86,6 +86,38 @@ Rebuild the containers after changing Python code, the model, or Docker configur
 docker compose --profile docker-news -f docker-compose.news.yml up --build -d --force-recreate
 ```
 
+Docker reads `backend/.env` only when it creates a container. After changing `.env` (for example a new API key), recreate the long-running producer so it picks up the change:
+
+```bash
+docker compose --profile docker-news -f docker-compose.news.yml up -d --force-recreate news-streamer
+```
+
+Restart `wsgi.py` as well when you change `.env`.
+
+## Clear Old Data
+
+The website reads warnings from MongoDB. The Redpanda topic only holds raw articles waiting for the warning streamer, which has already read past old messages, so clearing the topic does not change the website. These commands permanently delete data.
+
+Delete warnings saved before a date, keeping newer ones:
+
+```bash
+docker exec atlas-mongo-1 mongosh --quiet atlas --eval 'db.market_warnings.deleteMany({created_at: {$lt: ISODate("2026-10-01")}})'
+```
+
+Delete every warning:
+
+```bash
+docker exec atlas-mongo-1 mongosh --quiet atlas --eval 'db.market_warnings.deleteMany({})'
+```
+
+Empty the article topic, then restart the warning streamer so it reads the new topic cleanly:
+
+```bash
+docker exec atlas-redpanda-1 rpk topic delete atlas.market.news
+docker exec atlas-redpanda-1 rpk topic create atlas.market.news --partitions 1 --replicas 1
+docker compose --profile docker-news -f docker-compose.news.yml restart warning-streamer
+```
+
 ## Stop
 
 Stop the news stack and keep the MongoDB data:
