@@ -82,3 +82,12 @@ docker compose --profile docker-news -f docker-compose.news.yml down
 ```
 
 Add `--volumes` to the `down` command when you want to delete the MongoDB volume. The portfolio page refreshes its warning cards while it remains open.
+
+## AI Development Workflow
+
+`.ai-workflow/` runs a local Claude plan → Codex code → Claude review pipeline in an isolated Git worktree. Use `--bug` for bug fixes: Codex first reproduces the bug with a failing test and reviews the code to find the root cause, then Claude plans the fix. See [.ai-workflow/SETUP.md](.ai-workflow/SETUP.md).
+
+```bash
+python3 .ai-workflow/pipeline.py "Feature task with acceptance criteria"
+python3 .ai-workflow/pipeline.py --bug "What happened, what you expected, and any error text"
+```
