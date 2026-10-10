@@ -129,6 +129,13 @@ class PipelineTests(unittest.TestCase):
         plan_prompt=self.prompts().split('---\n')[1]
         self.assertIn(str(run/'diagnosis.md'),plan_prompt)
         self.assertIn(str(run/'repro.json'),plan_prompt)
+    def test_every_agent_prompt_enforces_scope(self):
+        p=self.invoke('fix',extra=['--bug']); self.assertEqual(p.returncode,0,p.stderr)
+        prompts=[x for x in self.prompts().split('---\n') if x.strip()]
+        self.assertEqual(len(prompts),6)  # diagnose, plan, code, review, fix, review
+        for prompt in prompts:
+            self.assertIn('STRICT SCOPE',prompt)
+        self.assertIn('Skip any finding that asks',prompts[4])
     def test_bug_diagnosis_may_not_fix_code(self):
         p=self.invoke(extra=['--bug'],FAKE_DIAG='fix'); self.assertEqual(p.returncode,2)
         self.assertIn('outside test_paths: value.txt',p.stderr)

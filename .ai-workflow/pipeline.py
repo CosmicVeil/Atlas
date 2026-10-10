@@ -20,6 +20,14 @@ class Stop(RuntimeError):
     pass
 
 
+# Shared by every agent prompt: agents change only what the task asks for.
+SCOPE = ('''STRICT SCOPE: Change only what the task explicitly asks for. Do NOT change anything
+you were not told to change: no refactors, renames, reformatting, cleanups, dependency or config
+changes, "while I'm here" fixes, or hardening of related code that the task did not mention.
+Similar defects or improvements you notice elsewhere go in your report as suggestions, not edits.
+Tests for the requested change are in scope.''')
+
+
 def save(path, value):
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(value, indent=2) + '\n')
@@ -158,6 +166,7 @@ def code(state, instructions, name):
     root = Path(state['run'])
     prompt = f'''Work on this task: {state['task']}
 Read applicable AGENTS.md and CLAUDE.md. Implement only the requested scope.
+{SCOPE}
 Add or update automated tests for every behavior you build or change, in the project's
 existing test locations and style: cover the main path, edge cases and error handling, and
 add a regression test for each bug you fix. Tests must run offline and pass. Never weaken,
@@ -183,6 +192,7 @@ Read applicable AGENTS.md and CLAUDE.md. Work in two parts before anyone plans a
    fails now because of this bug and will pass once it is fixed. Tests must run offline.
 2. Code review: trace the code path involved and find what actually causes the error. Check
    recent changes, related callers, and similar code that may share the defect.
+{SCOPE}
 Only add or edit test files ({', '.join(test_paths) or "the project's test directories"}).
 Do not change application code, configuration or dependencies. Do not weaken existing assertions.
 Do not commit, push, merge, deploy, modify git history, or change other checkouts. Do not read secrets.
@@ -253,6 +263,8 @@ Inspect baseline logs where needed. Identify pre-existing failures separately.
 Provide a concise implementation plan, acceptance criteria, files and verification.
 List the specific tests to add or update (file, cases) so every new or changed behavior is covered.
 Do not expand scope to unrelated baseline failures; flag them as blockers.
+{SCOPE} Plan only the changes the task asks for. List related issues you notice under
+"Out of scope (not planned)" instead of planning them.
 {"Verify the diagnosis against the source before relying on it. If it is wrong or unconfirmed, say so and plan from the real cause." if state.get('mode') == 'bug' else ''}
 ''', {'type': 'object', 'properties': {'plan': {'type': 'string'}},
       'required': ['plan'], 'additionalProperties': False}, 'plan')
@@ -267,7 +279,8 @@ Do not expand scope to unrelated baseline failures; flag them as blockers.
         n = state['round']
         if state['stage'] == 'fix':
             feedback = (root / f'review-{n}.result.json').read_text()
-            code(state, f'Address actionable review findings within task scope:\n{feedback}\n'
+            code(state, f'Address actionable review findings within task scope. Skip any finding that asks\n'
+                 f'for changes outside the task, and say which you skipped and why:\n{feedback}\n'
                  + (root / f'checks-{n}.json').read_text(), f'fix-{n + 1}')
             state['round'] += 1
             advance('check')
@@ -286,6 +299,10 @@ Read these new files as well (they are not in the diff):\n{new}
 Read baseline check results: {root / 'baseline.json'}
 Read current check results and relevant logs: {root / f'checks-{n}.json'}
 {bug_evidence(state)}Assess correctness, regressions, security, tests and all acceptance criteria.
+{SCOPE}
+Changes the task did not ask for are an actionable finding: ask for them to be reverted.
+Never ask for out-of-scope work. Mention related issues outside the task in the summary only,
+not in findings.
 New or changed behavior without meaningful automated tests is an actionable finding, as are
 tests that would pass without the change or weakened/deleted existing assertions.
 Report actionable findings with file/line references where possible, distinguish baseline issues.

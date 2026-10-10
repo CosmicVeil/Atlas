@@ -66,6 +66,8 @@ If Codex cannot reproduce the bug, it says so in the report, and the planner see
 7. The runner runs the checks and saves logs. Claude independently reads the diff, new files, source, plan, and check results, and returns structured findings.
 8. Up to two fix and review rounds run. Success needs zero unresolved findings and every required check passing. Otherwise the run ends as `needs-attention` with exit code 2.
 
+**Strict scope.** Every agent prompt tells the agent to change only what the task asks for: no refactors, cleanups, config changes, or fixes to related code the task did not mention. The planner lists related issues under "Out of scope (not planned)". The reviewer flags unrequested changes as findings to revert and never asks for out-of-scope work, and Codex skips any review finding that would go beyond the task. Name everything you want changed in the task itself.
+
 Claude gets only the Read, Glob and Grep tools in safe mode, which disables its hooks, plugins and custom instructions. Codex is told not to commit, push, merge or deploy, and no runner step does these things. This is a personal local workflow, not a sandbox for untrusted code.
 
 ## Atlas checks
