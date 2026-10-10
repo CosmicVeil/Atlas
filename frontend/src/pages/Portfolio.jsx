@@ -64,6 +64,7 @@ function Portfolio() {
   const [portfolios, setPortfolios] = useState([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState(null);
   const selectedPortfolioIdRef = useRef(null);
+  const portfoliosRequestRef = useRef(0);
   const [selectedStock, setSelectedStock] = useState(null);
 
   // Holdings synced from backend
@@ -96,21 +97,32 @@ function Portfolio() {
 
   // Fetch portfolios from API
   useEffect(() => {
-    if (token) {
-      fetchPortfolios();
-    }
+    fetchPortfolios(true);
   }, [token]);
 
   useEffect(() => {
     selectedPortfolioIdRef.current = selectedPortfolio?.id || null;
   }, [selectedPortfolio]);
 
-  async function fetchPortfolios() {
-    const data = await getPortfolios(token);
-    if (Array.isArray(data)) {
-      setPortfolios(data);
-    } else {
+  async function fetchPortfolios(clearExisting = false) {
+    const requestId = ++portfoliosRequestRef.current;
+    if (clearExisting) {
       setPortfolios([]);
+      setSelectedPortfolio(null);
+    }
+    if (!token) return;
+
+    try {
+      const data = await getPortfolios(token);
+      if (requestId !== portfoliosRequestRef.current) return;
+
+      if (Array.isArray(data)) {
+        setPortfolios(data);
+      } else {
+        console.error("Error fetching portfolios:", data?.error || "Invalid response");
+      }
+    } catch (e) {
+      console.error("Error fetching portfolios:", e);
     }
   }
 
@@ -207,27 +219,39 @@ function Portfolio() {
   // Create new portfolio
   async function handleCreatePortfolio(e) {
     e.preventDefault();
-    if (!newPortfolioName.trim()) return;
-    const created = await createPortfolio(token, newPortfolioName);
-    if (!created.error) {
-      setPortfolios([...portfolios, created]);
-      setNewPortfolioName('');
-      setShowAddPortfolio(false);
+    const name = newPortfolioName.trim();
+    if (!name) return;
+
+    try {
+      const created = await createPortfolio(token, name);
+      if (!created.error) {
+        setPortfolios(current => [...current, created]);
+        setNewPortfolioName('');
+        setShowAddPortfolio(false);
+        fetchPortfolios();
+      } else {
+        alert(created.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error creating portfolio.");
     }
   }
 
   // Update portfolio name
   async function handleUpdatePortfolio(e, id) {
     e.preventDefault();
-    if (!editPortfolioName.trim()) return;
-    const result = await updatePortfolio(token, id, editPortfolioName);
+    const name = editPortfolioName.trim();
+    if (!name) return;
+    const result = await updatePortfolio(token, id, name);
     if (!result.error) {
-      setPortfolios(portfolios.map(p => (p.id === id ? { ...p, name: editPortfolioName } : p)));
+      setPortfolios(current => current.map(p => (p.id === id ? { ...p, name } : p)));
       setEditingPortfolioId(null);
       setEditPortfolioName('');
       if (selectedPortfolio && selectedPortfolio.id === id) {
-        setSelectedPortfolio({ ...selectedPortfolio, name: editPortfolioName });
+        setSelectedPortfolio({ ...selectedPortfolio, name });
       }
+      fetchPortfolios();
     }
   }
 
@@ -235,10 +259,11 @@ function Portfolio() {
   async function handleDeletePortfolio(id) {
     const result = await deletePortfolio(token, id);
     if (!result.error) {
-      setPortfolios(portfolios.filter(p => p.id !== id));
+      setPortfolios(current => current.filter(p => p.id !== id));
       if (selectedPortfolio && selectedPortfolio.id === id) {
         setSelectedPortfolio(null);
       }
+      fetchPortfolios();
     }
   }
 

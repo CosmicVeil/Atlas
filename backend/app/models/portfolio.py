@@ -5,7 +5,7 @@ class Portfolio(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    user_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     # this lets you do portfolio.holdings to get all its holdings
     holdings = db.relationship('Holding', backref='portfolio', lazy=True, cascade='all, delete-orphan')

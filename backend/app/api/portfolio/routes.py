@@ -9,8 +9,8 @@ portfolio_bp = Blueprint('portfolio', __name__)
 @jwt_required()
 def create_portfolio():
     user_id = get_jwt_identity()
-    data = request.get_json()
-    name = data.get('name')
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
 
     if not name:
         return jsonify({'error': 'Name is required'}), 400
@@ -58,13 +58,17 @@ def get_portfolios():
 @jwt_required()
 def update_portfolio(portfolio_id):
     user_id = get_jwt_identity()
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+
+    if not name:
+        return jsonify({'error': 'Name is required'}), 400
 
     portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user_id).first()
     if not portfolio:
         return jsonify({'error': 'Portfolio not found'}), 404
 
-    portfolio.name = data.get('name', portfolio.name)
+    portfolio.name = name
     db.session.commit()
     return jsonify(portfolio.to_dict()), 200
 
