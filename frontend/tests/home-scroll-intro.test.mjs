@@ -16,6 +16,7 @@ const optionalRead = (name) => read(`../src/components/home/${name}`).catch((err
   throw error;
 });
 const art = await optionalRead('IntroIllustrations.jsx');
+const interactionData = await optionalRead('introInteractions.js');
 const list = await optionalRead('IntroSceneList.jsx');
 const cta = await optionalRead('IntroCta.jsx');
 const hook = await optionalRead('useIntroProgress.js');
@@ -136,7 +137,7 @@ test('each feature includes its scroll-driven visual behavior', () => {
     assert.match(art, new RegExp(`function ${visual}\\(`));
     assert.match(art, new RegExp(`<${visual} `));
   }
-  for (const text of ['Retirement', 'Growth', 'Dividends', 'Largest holding: NVDA, 18%', 'stocks analysed', 'How does AAPL fit my portfolio?', 'Conservative', 'Education', 'USD', 'EUR']) assert.ok(art.includes(text), text);
+  for (const text of ['Retirement', 'Growth', 'Dividends', 'Largest holding: NVDA, 18%', 'stocks analysed', 'How does AAPL fit my portfolio?', 'Conservative', 'Education', 'USD', 'EUR']) assert.ok(art.includes(text) || interactionData.includes(text), text);
   assert.match(art, /40 \* 25/);
   assert.match(art, /index \* 37/);
   assert.match(art, /motion\.path[^\n]+style=\{\{ pathLength \}\}/);
@@ -269,7 +270,8 @@ test('scene contract has exact keys, card copy, routes and link labels in both m
   });
   for (const source of [intro, list]) {
     assert.match(source, /data-intro-scene=\{/);
-    assert.match(source, /<IntroCta/);
+    assert.match(source, /cta=\{\{ phase, index/);
+    assert.doesNotMatch(source, /<IntroCta/);
     assert.doesNotMatch(source, /<motion.div aria-hidden="true" className="home-intro-scene/);
   }
   assert.match(intro, /data-home-intro/);
@@ -282,6 +284,8 @@ test('scene contract has exact keys, card copy, routes and link labels in both m
   assert.match(cta, /pointer-events-auto/);
   assert.match(cta, /pointer-events-none/);
   assert.match(art, /aria-hidden="true"/);
+  assert.match(art, /<IntroCta \{\.\.\.cta\}/);
+  assert.match(art, /<IntroBeacon /);
 });
 
 test('v2 timing budgets readable holds and three equal transition beats with no title overlap', () => {
@@ -331,19 +335,19 @@ test('rail and focus scroll targets reach the full-opacity hold and invert geome
 test('reduced motion lists the six final frames without pinning or pulse', () => {
   assert.match(list, /FEATURE_PHASES.map/);
   assert.match(list, /useMotionValue\(1\)/);
-  assert.match(list, /variant="static"/);
+  assert.match(list, /variant: 'static'/);
   assert.doesNotMatch(list, /fixed|sticky|h-\[.*vh|useIntroProgress/);
   assert.doesNotMatch(home, /repeat: Infinity/);
 });
 
 test('sonar is the only loop, active-only, paused for interaction and disabled for reduced motion', () => {
   assert.match(css, /@keyframes home-intro-sonar/);
-  assert.match(css, /\.home-intro-cta.is-active::after\s*\{[^}]*animation: home-intro-sonar 1.6s ease-out infinite/);
-  assert.match(css, /:hover::after[\s\S]*?:focus-visible::after\s*\{[^}]*animation-play-state: paused/);
-  assert.match(css, /\.home-intro-cta--static::after\s*\{[^}]*animation: none/);
+  assert.match(css, /\.home-intro-cta-mark\.is-active \.home-intro-cta-ring\s*\{[^}]*animation: home-intro-sonar 1.6s ease-out infinite/);
+  assert.match(css, /:has\(\.home-intro-cta:hover\)[\s\S]*?:has\(\.home-intro-cta:focus-visible\)[\s\S]*?\{[^}]*animation-play-state: paused/);
+  assert.match(css, /\.home-intro-cta-mark:not\(\.is-active\) \.home-intro-cta-ring/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
   assert.match(css, /outline-offset:/);
-  assert.match(css, /scale\(1.18, 1.6\)/);
+  assert.match(css, /transform-box: fill-box;[^}]*transform-origin: center;/);
   for (const block of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (/#9FB7FF/i.test(block[2])) assert.match(block[1], /cta/);
     if (/cta/.test(block[1])) assert.doesNotMatch(block[2], /#5FBF93|#E07A6A/i);

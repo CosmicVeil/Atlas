@@ -3,7 +3,6 @@ import { motion, useMotionValue, useMotionValueEvent, useTransform } from 'motio
 import { Wallet, Search, Brain, LineChart, User, BarChart3 } from 'lucide-react';
 import { FEATURE_PHASES, INTRO_END, OUTRO_START, TITLE_FOLD_END, getInteractivePhase, getFadeStops, getCopyFadeStops, getIllustrationStops, getLayoutTravel, getFrameVisible, getFrameOpacity, getFrameRect } from './introPhases';
 import useIntroProgress from './useIntroProgress';
-import IntroCta from './IntroCta';
 import IntroIllustration from './IntroIllustrations';
 import { INITIAL_STATE, reduceInteraction } from './introInteractions';
 import './homeIntro.css';
@@ -115,14 +114,13 @@ function Scene({ phase, progress, index, activeIndex, scrollToScene }) {
           <motion.div className="home-intro-copy" style={{ x, opacity: copyOpacity }}>
             <h2 data-intro-heading className="font-light text-[28px] lg:text-[40px] tracking-tight">{phase.title}</h2>
             <p className="text-base leading-relaxed">{phase.description}</p>
-            <IntroCta phase={phase} index={index} active={active} scrollToScene={scrollToScene} />
           </motion.div>
         </motion.div>
       </div>
       <div className="home-intro-art-slot" data-intro-slot="art">
         <motion.div data-intro-art className="home-intro-frame" style={{ opacity: frameOpacity }}>
           <motion.div className="home-intro-illustration" style={{ opacity }}>
-            <IntroIllustration scene={phase.key} t={t} grow={scaleY} state={state} onAction={onAction} active={active} onFocus={() => { if (!active) scrollToScene(index); }} />
+            <IntroIllustration scene={phase.key} t={t} grow={scaleY} cta={{ phase, index, scrollToScene }} state={state} onAction={onAction} active={active} onFocus={() => { if (!active) scrollToScene(index); }} />
           </motion.div>
         </motion.div>
       </div>
