@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TrendingUp, LineChart, Brain, Wallet, Search, User, BarChart3 } from 'lucide-react';
 import { motion } from 'motion/react';
 import HomeScrollIntro from '../components/home/HomeScrollIntro';
+import IntroSceneList from '../components/home/IntroSceneList';
 import { getReducedMotion, getServerReducedMotion, subscribeReducedMotion } from '../components/home/reducedMotion';
 
 function Home() {
@@ -21,7 +22,7 @@ function Home() {
             fill="none"
             initial={{ pathLength: 0, opacity: 0 }}
             animate={{ pathLength: 1, opacity: 1 }}
-            transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 3, ease: "linear" }}
           />
           <motion.path
             d="M0,500 Q150,420 300,450 T600,430 T900,470 T1200,440 T1500,460 T1800,450 T2100,480"
@@ -30,7 +31,7 @@ function Home() {
             fill="none"
             initial={{ pathLength: 0, opacity: 0 }}
             animate={{ pathLength: 1, opacity: 1 }}
-            transition={{ duration: 4, repeat: Infinity, ease: "linear", delay: 0.5 }}
+            transition={{ duration: 4, ease: "linear", delay: 0.5 }}
           />
           <motion.path
             d="M0,300 Q200,250 400,280 T800,260 T1200,290 T1600,270 T2000,300"
@@ -39,19 +40,20 @@ function Home() {
             fill="none"
             initial={{ pathLength: 0, opacity: 0 }}
             animate={{ pathLength: 1, opacity: 1 }}
-            transition={{ duration: 5, repeat: Infinity, ease: "linear", delay: 1 }}
+            transition={{ duration: 5, ease: "linear", delay: 1 }}
           />
         </svg>
       </div>
 
       {/* Hero Section */}
       {reduceMotion !== false ? (
-        <section className="relative min-h-screen flex flex-col items-center justify-center px-8 pt-20">
+        <>
+        <section data-home-intro className="relative min-h-screen flex flex-col items-center justify-center px-8 pt-20">
           <div className="text-center">
-            <h1 className="text-6xl sm:text-8xl md:text-9xl font-light tracking-tight text-white mb-6">
+            <h1 data-intro-title className="text-6xl sm:text-8xl md:text-9xl font-light tracking-tight text-white mb-6">
               ATLAS
             </h1>
-            <p className="text-sm tracking-[0.3em] text-white/40 mb-4 uppercase">
+            <p className="text-sm tracking-[0.3em] text-[rgba(245,245,242,0.55)] mb-4">
               AI Trading, Learning & Stock Analysis
             </p>
             <p className="text-base text-white/60 max-w-2xl mx-auto leading-relaxed">
@@ -63,6 +65,8 @@ function Home() {
             <div className="w-px h-16 bg-gradient-to-b from-white/20 to-transparent"></div>
           </div>
         </section>
+        <IntroSceneList />
+        </>
       ) : <HomeScrollIntro />}
 
       {/* Features Grid */}
