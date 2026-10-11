@@ -10,7 +10,7 @@ function ListScene({ phase, index }) {
   const t = useMotionValue(1);
   const [state, setState] = useState(INITIAL_STATE[phase.key]);
   return (
-    <section data-intro-scene={phase.key} className={`home-intro-list-scene ${phase.layout === 'C' ? 'home-intro-wide' : ''}`}>
+    <section data-intro-scene={phase.key} className="home-intro-list-scene">
       <div data-intro-copy className="home-intro-copy">
         <h2 data-intro-heading className="font-light text-[28px] lg:text-[40px] tracking-tight">{phase.title}</h2>
         <p className="text-base leading-relaxed">{phase.description}</p>

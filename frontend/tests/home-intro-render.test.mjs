@@ -26,7 +26,7 @@ try {
         import { MemoryRouter } from 'react-router-dom';
         import { motionValue } from 'motion/react';
         import Home from './src/pages/Home.jsx';
-        import HomeScrollIntro, { Scene } from './src/components/home/HomeScrollIntro.jsx';
+        import HomeScrollIntro, { Scene, TravelFrames } from './src/components/home/HomeScrollIntro.jsx';
         import IntroSceneList from './src/components/home/IntroSceneList.jsx';
         import IntroCta from './src/components/home/IntroCta.jsx';
         import useIntroProgress from './src/components/home/useIntroProgress.js';
@@ -61,6 +61,7 @@ try {
           const flatten = nodes => React.Children.toArray(nodes).flatMap(node => node.type === React.Fragment ? flatten(node.props.children) : [node.props]);
           return flatten(result);
         };
+        export const frames = (progress, slots) => renderToStaticMarkup(<TravelFrames progress={motionValue(progress)} geometry={motionValue(slots)} />);
         export const scene = (phase, index, progress, activeIndex, slots = []) => renderToStaticMarkup(
           <MemoryRouter><Scene phase={phase} index={index} progress={motionValue(progress)} activeIndex={activeIndex} geometry={motionValue(slots)} scrollToScene={() => {}} /></MemoryRouter>
         );
@@ -79,7 +80,7 @@ try {
       name: 'expose-scene-for-render-tests',
       setup(builder) {
         builder.onLoad({ filter: /HomeScrollIntro\.jsx$/ }, async ({ path }) => ({
-          contents: `${await readFile(path, 'utf8')}\nexport { Scene };`,
+          contents: `${await readFile(path, 'utf8')}\nexport { Scene, TravelFrames };`,
           loader: 'jsx',
         }));
         builder.onLoad({ filter: /IntroIllustrations\.jsx$/ }, async ({ path }) => ({
@@ -508,22 +509,50 @@ test('desktop scroll samples expose only the current scene, with measured layout
   assert.equal(listeners.size, 0);
 });
 
-test('empty frames remain visible and travel between measured slots while scene content is hidden', () => {
+test('empty frames stay on screen and glide between measured slots while scene content is hidden', () => {
   const slots = FEATURE_PHASES.map((_, i) => ({
     copy: { x: 100 + i * 100, y: 200 + i * 50, width: 400, height: 200 },
     art: { x: 600 - i * 50, y: 200, width: 500 + i * 20, height: 300 },
+    baseline: { x: 0, y: 400, width: 1000, height: 1 },
   }));
   for (let i = 1; i < 6; i++) {
-    const { travel } = phases.getTransitionBeats(i - 1);
-    const p = (travel[0] + travel[1]) / 2;
-    const html = render.scene(FEATURE_PHASES[i], i, p, phases.getInteractivePhase(p), slots);
-    assert.match(html, /data-intro-scene=[^>]+opacity:0/);
-    assert.match(html, /data-intro-travel-frame="copy"[^>]+opacity:1/);
-    const [, x, y] = html.match(/data-intro-travel-frame="copy"[^>]+translate\(([\d.-]+)px, ([\d.-]+)px\)/);
-    assert.ok(Math.abs(Number(x) + 50) < 1e-9);
-    assert.ok(Math.abs(Number(y) + 25) < 1e-9);
-    assert.match(html, /data-intro-travel-frame="art"[^>]+opacity:1/);
+    const { retract, travel, grow } = phases.getTransitionBeats(i - 1);
+    const middle = (travel[0] + travel[1]) / 2;
+    assert.match(render.scene(FEATURE_PHASES[i], i, middle, phases.getInteractivePhase(middle), slots), /data-intro-scene=[^>]+opacity:0/);
+    // One persistent set of frames, fully visible through every beat of the hand-off.
+    for (const p of [(retract[0] + retract[1]) / 2, middle, (grow[0] + grow[1]) / 2]) {
+      const html = render.frames(p, slots);
+      assert.match(html, /class="home-intro-frames" style="opacity:1"/);
+      assert.equal([...html.matchAll(/data-intro-travel-frame="(copy|art)"/g)].length, 2);
+      assert.equal([...html.matchAll(/class="home-intro-edge"/g)].length, 8);
+    }
+    // Mid-travel the copy box sits halfway between the two slots (plus the 10px padding).
+    const top = render.frames(middle, slots).match(/data-intro-travel-frame="copy"><div class="home-intro-edge" style="transform:translate\(([\d.-]+)px, ([\d.-]+)px\) scaleX\(([\d.-]+)\)/);
+    assert.ok(Math.abs(Number(top[1]) - (slots[i - 1].copy.x + 50 - 10)) < 1e-6);
+    assert.ok(Math.abs(Number(top[2]) - (slots[i - 1].copy.y + 25 - 10)) < 1e-6);
+    assert.ok(Math.abs(Number(top[3]) - 420) < 1e-6);
   }
+});
+
+test('frame edges are hairlines that only lengthen, never a stretched outlined box', () => {
+  const slots = FEATURE_PHASES.map((_, i) => ({
+    copy: { x: 100, y: 100, width: 300 + i * 200, height: 150 },
+    art: { x: 500, y: 100, width: 400, height: 200 + i * 50 },
+    baseline: { x: 0, y: 400, width: 1000, height: 1 },
+  }));
+  const { travel } = phases.getTransitionBeats(1);
+  const html = render.frames((travel[0] + travel[1]) / 2, slots);
+  for (const [, transform] of html.matchAll(/class="home-intro-edge" style="transform:([^"]+)"/g)) {
+    assert.match(transform, /^translate\([^)]+\) (scaleX|scaleY)\([\d.]+\)$/);
+    assert.doesNotMatch(transform, /scale\([^)]*,/);
+  }
+});
+
+test('compact AI analysis caption sits below the baseline at a readable size', () => {
+  const html = render.responsiveArt('ai-analysis', 390);
+  const [, y, size] = html.match(/<text data-intro-caption="true" x="12" y="(\d+)"[^>]*font-size="(\d+)"/);
+  assert.ok(Number(y) - Number(size) > 240, 'caption top is below the 240 baseline');
+  assert.ok(Number(size) * (350 / 520) >= 11, 'caption renders at 11px or larger on a 390px phone');
 });
 
 test('currency chips align their visible label and outline with each clickable target', async () => {

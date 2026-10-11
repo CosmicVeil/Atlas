@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useSyncExternalStore } from 'react';
-import { animate, motion, useMotionValue, useSpring, useTransform } from 'motion/react';
+import { createContext, useContext, useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import { animate, motion, motionValue, useMotionValue, useSpring, useTransform } from 'motion/react';
 
 import useIntroStep from './useIntroStep';
 
@@ -33,8 +33,19 @@ function subscribeDesktopArt(onChange) {
   return () => media.removeEventListener('change', onChange);
 }
 
+// The scene's grow-from-baseline scale is applied inside the SVG (y = 240 is the
+// baseline in both view boxes). Chrome does not re-lay-out SVG text when an HTML
+// ancestor's CSS scale changes, so scaling a wrapper left the labels painted at
+// stale positions.
+const GrowContext = createContext(null);
+const FULL_SIZE = motionValue(1);
+
 function Art({ children, wide }) {
-  return <svg className="home-intro-art tabular-nums" viewBox={wide ? "0 0 880 300" : "0 0 520 360"} fill="none" aria-hidden="true">{children}</svg>;
+  const grow = useContext(GrowContext) ?? FULL_SIZE;
+  const transform = useTransform(grow, scale => `translate(0px, 240px) scale(1, ${scale}) translate(0px, -240px)`);
+  return <svg className="home-intro-art tabular-nums" viewBox={wide ? "0 0 880 300" : "0 0 520 360"} fill="none" aria-hidden="true">
+    <motion.g data-intro-grow style={{ transform, transformBox: 'view-box', transformOrigin: '0 0' }}>{children}</motion.g>
+  </svg>;
 }
 
 function PortfolioRow({ row, index, t, highlighted }) {
@@ -136,17 +147,17 @@ function AIAnalysis({ t, state, wide }) {
     <motion.path d="M10 240H532" stroke="currentColor" style={{ y }} />
     </g>
     <motion.g style={{ x, opacity }}>
-      <text x={wide ? 560 : 286} y="42" className="home-intro-svg-muted" fontSize={wide ? 12 : 14}>Sample shortlist</text>
+      <text x={wide ? 560 : 286} y="42" className="home-intro-svg-muted" fontSize={wide ? 12 : 17}>Sample shortlist</text>
       {SHORTLIST.map(([ticker, risk], index) => <g key={ticker}>
         <path d={`M${wide ? 560 : 286} ${78 + index * 36}H${wide ? 868 : 508}`} stroke="rgba(255,255,255,0.05)" />
-        <text x={wide ? 560 : 286} y={68 + index * 36} fill="currentColor" fontSize="14">{ticker}</text>
-        <text x={wide ? 868 : 508} y={68 + index * 36} textAnchor="end" className="home-intro-svg-muted" fontSize={wide ? 12 : 14}>{risk} risk</text>
+        <text x={wide ? 560 : 286} y={68 + index * 36} fill="currentColor" fontSize={wide ? 14 : 18}>{ticker}</text>
+        <text x={wide ? 868 : 508} y={68 + index * 36} textAnchor="end" className="home-intro-svg-muted" fontSize={wide ? 12 : 16}>{risk} risk</text>
       </g>)}
     </motion.g>
     {state.dot !== null && <text x={wide ? 560 : 12} y={wide ? 260 : 24} fill="currentColor" fontSize="17">{state.pinned ? 'Pinned · ' : 'Sample · '}{dotAt((state.dot % 40 + 0.5) / 40, (Math.floor(state.dot / 40) + 0.5) / 25).ticker}</text>}
     {state.note !== null && <text x={wide ? 560 : 12} y={wide ? 285 : 340} fill="currentColor" fontSize={wide ? 11 : 14}>{RISK_NOTES[state.note]}</text>}
     <motion.text x="12" y="282" fill="currentColor" fontSize="21" fontWeight="300">{count}</motion.text>
-    <text x="12" y={wide ? 298 : 306} className="home-intro-svg-muted" fontSize={wide ? 12 : 14}>Daily coverage · Sample data</text>
+    <text data-intro-caption x="12" y={wide ? 298 : 310} className="home-intro-svg-muted" fontSize={wide ? 12 : 18}>Daily coverage · Sample data</text>
   </Art>;
 }
 
@@ -315,7 +326,7 @@ function Controls({ scene, t, state, onAction, active, onFocus, wide = false }) 
   }
 }
 
-export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scene], onAction = () => {}, active = true, reduced = false, onFocus }) {
+export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scene], onAction = () => {}, active = true, reduced = false, onFocus, grow = null }) {
   const desktop = useSyncExternalStore(subscribeDesktopArt, getDesktopArt, getDesktopArt);
   const wide = desktop && !reduced && (scene === 'ai-analysis' || scene === 'insights');
   const typing = useMotionValue(0);
@@ -349,7 +360,7 @@ export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scen
       const tilt = getTilt((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
       rotateX.set(tilt.rotateX); rotateY.set(tilt.rotateY);
     }} onPointerLeave={() => { rotateX.set(0); rotateY.set(0); tiltBounds.current = null; }}>
-    <Illustration t={reveal} state={state} wide={wide} />
+    <GrowContext.Provider value={grow}><Illustration t={reveal} state={state} wide={wide} /></GrowContext.Provider>
     <Controls scene={scene} t={t} state={state} onAction={onAction} active={active} onFocus={onFocus} wide={wide} />
   </motion.div>;
 }

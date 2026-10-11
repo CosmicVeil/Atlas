@@ -34,14 +34,28 @@
 .home-intro-baseline { height: 1px; background: #F5F5F2; transform-origin: center; }
 .home-intro-baseline-slot { visibility: hidden; }
 
-.home-intro-scene,
-.home-intro-travel {
+.home-intro-scene {
   position: absolute;
   inset: 0;
 }
 
-.home-intro-travel { pointer-events: none; }
-.home-intro-travel .home-intro-copy-slot { height: var(--copy-height); }
+/* Persistent box outlines: four 1px lines per box, moved and lengthened with transforms. */
+.home-intro-frames {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.home-intro-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  background: rgba(255,255,255,0.10);
+  transform-origin: 0 0;
+  will-change: transform;
+}
 
 .home-intro-copy h2 {
   line-height: 1.15;
@@ -74,9 +88,6 @@
 
 .home-intro-frame {
   height: 100%;
-  outline: 1px solid rgba(255,255,255,0.10);
-  outline-offset: 10px;
-  transform-origin: top left;
 }
 
 .home-intro-illustration { transform-origin: 50% 66.666667%; perspective: 900px; }
@@ -124,7 +135,7 @@
 
 @keyframes home-intro-sonar {
   from { transform: scale(1); opacity: 0.6; }
-  to { transform: scale(1.6); opacity: 0; }
+  to { transform: scale(1.18, 1.6); opacity: 0; }
 }
 
 .home-intro-cta:hover,
@@ -230,9 +241,8 @@
     aspect-ratio: 880 / 300; translate: 0 -80%;
   }
   .home-intro-layout-C .home-intro-baseline-slot { top: 58%; }
-  .home-intro-layout-C .home-intro-copy-slot { top: calc(58% + 5rem); bottom: auto; left: 7rem; right: 3rem; }
-  .home-intro-layout-C .home-intro-copy { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1.5rem; align-items: start; }
-  .home-intro-layout-C .home-intro-travel { pointer-events: none; }
+  .home-intro-layout-C .home-intro-copy-slot { top: calc(58% + 7rem); bottom: auto; left: 7rem; right: 3rem; }
+  .home-intro-layout-C .home-intro-copy { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1.5rem; align-items: start; padding-right: 1.5rem; }
   .home-intro-layout-C .home-intro-copy p { margin: 0; }
   .home-intro-layout-C .home-intro-art { width: 100%; }
   .home-intro-layout-C .home-intro-illustration { transform-origin: 50% 80%; }

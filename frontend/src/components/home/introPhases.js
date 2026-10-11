@@ -105,3 +105,32 @@ export function getSceneScrollProgress(index) {
 export function progressToScrollY(progress, wrapperTop, height, viewport) {
   return wrapperTop + clamp(progress) * Math.max(0, height - viewport);
 }
+
+// The two empty box outlines (text and illustration) stay on screen for the
+// whole sequence and glide between the measured slots during each travel beat,
+// so they never fade out and back in between scenes.
+export const FRAME_PADDING = 10;
+
+export function getFrameOpacity(progress) {
+  const p = clamp(progress);
+  const fadeIn = [INTRO_END - BEAT, INTRO_END];
+  const fadeOut = [OUTRO_START, OUTRO_START + BEAT];
+  if (p <= fadeIn[0] || p >= fadeOut[1]) return 0;
+  if (p < fadeIn[1]) return (p - fadeIn[0]) / BEAT;
+  if (p > fadeOut[0]) return 1 - (p - fadeOut[0]) / BEAT;
+  return 1;
+}
+
+export function getFrameRect(slots, slot, progress, padding = FRAME_PADDING) {
+  if (!slots?.length) return null;
+  const { from, to, amount } = getLayoutTravel(progress);
+  const a = slots[from][slot];
+  const b = slots[to][slot];
+  const mix = (key) => a[key] + (b[key] - a[key]) * amount;
+  return {
+    x: mix('x') - padding,
+    y: mix('y') - padding,
+    width: mix('width') + padding * 2,
+    height: mix('height') + padding * 2,
+  };
+}

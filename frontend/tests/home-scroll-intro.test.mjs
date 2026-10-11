@@ -173,7 +173,7 @@ test('SVG motion elements never interpret pixel origins relative to the default 
       `SVG origin needs percentages or an explicit view-box: ${style}`,
     );
   }
-  assert.equal(origins, 4);
+  assert.equal(origins, 5); // includes the in-SVG grow group, which uses an explicit view-box
 });
 
 test('reduced motion renders a static, responsive hero outside the pinned sequence', () => {
@@ -343,7 +343,7 @@ test('sonar is the only loop, active-only, paused for interaction and disabled f
   assert.match(css, /\.home-intro-cta--static::after\s*\{[^}]*animation: none/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
   assert.match(css, /outline-offset:/);
-  assert.match(css, /scale\(1.6\)/);
+  assert.match(css, /scale\(1.18, 1.6\)/);
   for (const block of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (/#9FB7FF/i.test(block[2])) assert.match(block[1], /cta/);
     if (/cta/.test(block[1])) assert.doesNotMatch(block[2], /#5FBF93|#E07A6A/i);
@@ -534,7 +534,9 @@ test('headline utilities retain the mobile and desktop sizes without CSS overrid
   for (const [, declarations] of css.matchAll(/[^{}]*\.home-intro-copy h2[^{}]*\{([^{}]*)\}/g)) {
     assert.doesNotMatch(declarations, /font-size\s*:/);
   }
-  assert.equal([...css.matchAll(/\.home-intro-travel \.home-intro-copy-slot\s*\{/g)].length, 1);
+  assert.doesNotMatch(css, /\.home-intro-travel/);
+  assert.match(css, /\.home-intro-edge\s*\{[^}]*width: 1px;[^}]*height: 1px;/);
+  assert.doesNotMatch(css.match(/\.home-intro-frame\s*\{[^}]*\}/)[0], /outline/);
 });
 
 test('compact art retains the stacked baseline origin outside desktop layout C', () => {
@@ -542,4 +544,32 @@ test('compact art retains the stacked baseline origin outside desktop layout C',
   assert.doesNotMatch(css, /@media \(max-width: 767px\)[\s\S]*?aspect-ratio: 880 \/ 300/);
   const desktop = css.slice(css.indexOf('@media (min-width: 768px)'));
   assert.match(desktop, /\.home-intro-layout-C \.home-intro-illustration\s*\{ transform-origin: 50% 80%; \}/);
+});
+
+test('frame outlines move continuously through every hand-off beat', () => {
+  const slots = FEATURE_PHASES.map((_, i) => ({
+    copy: { x: i * 120, y: 300 - i * 20, width: 400 + i * 60, height: 160 },
+    art: { x: 700 - i * 90, y: 120, width: 500, height: 300 + i * 10 },
+  }));
+  let previous = null;
+  for (let step = 0; step <= 4000; step += 1) {
+    const p = phases.INTRO_END + (phases.OUTRO_START - phases.INTRO_END) * step / 4000;
+    assert.equal(phases.getFrameOpacity(p), 1);
+    const rect = phases.getFrameRect(slots, 'copy', p);
+    if (previous) for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(rect[key] - previous[key]) < 2, `${key} jumps at p=${p}`);
+    previous = rect;
+  }
+  assert.equal(phases.getFrameOpacity(0), 0);
+  assert.equal(phases.getFrameOpacity(1), 0);
+});
+
+
+test('illustrations grow from the baseline inside the SVG, not by scaling an HTML wrapper', () => {
+  // Chrome does not re-lay-out SVG text when an HTML ancestor's CSS scale changes,
+  // which left labels painted at stale positions. The grow scale lives on an SVG group.
+  const wrapper = intro.match(/className="home-intro-illustration" style=\{\{([^}]*)\}\}/)[1];
+  assert.doesNotMatch(wrapper, /scale/);
+  assert.match(intro, /<IntroIllustration[^>]*grow=\{scaleY\}/);
+  assert.match(art, /<motion\.g data-intro-grow style=\{\{ transform, transformBox: 'view-box'/);
+  assert.match(art, /translate\(0px, 240px\) scale\(1, \$\{scale\}\) translate\(0px, -240px\)/);
 });

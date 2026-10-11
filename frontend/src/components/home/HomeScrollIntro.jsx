@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useMotionValueEvent, useTransform } from 'motion/react';
 import { Wallet, Search, Brain, LineChart, User, BarChart3 } from 'lucide-react';
-import { FEATURE_PHASES, INTRO_END, OUTRO_START, TITLE_FOLD_END, getInteractivePhase, getFadeStops, getCopyFadeStops, getIllustrationStops, getLayoutTravel, getFrameVisible } from './introPhases';
+import { FEATURE_PHASES, INTRO_END, OUTRO_START, TITLE_FOLD_END, getInteractivePhase, getFadeStops, getCopyFadeStops, getIllustrationStops, getLayoutTravel, getFrameVisible, getFrameOpacity, getFrameRect } from './introPhases';
 import useIntroProgress from './useIntroProgress';
 import IntroCta from './IntroCta';
 import IntroIllustration from './IntroIllustrations';
@@ -60,19 +60,37 @@ function Baseline({ progress, geometry }) {
   </motion.div>;
 }
 
-function useFrameTravel(index, slot, progress, geometry) {
-  return useTransform(() => {
-    const { from, to, amount } = getLayoutTravel(progress.get());
-    const slots = geometry?.get();
-    if (!slots?.length || to !== index || from === to) return 'none';
-    const a = slots[from][slot];
-    const b = slots[to][slot];
-    const remaining = 1 - amount;
-    return `translate(${(a.x - b.x) * remaining}px, ${(a.y - b.y) * remaining}px) scale(${1 + (a.width / b.width - 1) * remaining}, ${1 + (a.height / b.height - 1) * remaining})`;
+// Each outline is four 1px lines. Lines scale only along their length, so the
+// hairline keeps its 1px thickness however far the box stretches while travelling.
+const EDGES = {
+  top: r => `translate(${r.x}px, ${r.y}px) scaleX(${r.width})`,
+  bottom: r => `translate(${r.x}px, ${r.y + r.height - 1}px) scaleX(${r.width})`,
+  left: r => `translate(${r.x}px, ${r.y}px) scaleY(${r.height})`,
+  right: r => `translate(${r.x + r.width - 1}px, ${r.y}px) scaleY(${r.height})`,
+};
+
+function FrameEdge({ slot, edge, progress, geometry }) {
+  const transform = useTransform(() => {
+    const rect = getFrameRect(geometry.get(), slot, progress.get());
+    return rect ? EDGES[edge](rect) : 'scale(0)';
   });
+  return <motion.div className="home-intro-edge" style={{ transform }} />;
 }
 
-function Scene({ phase, progress, index, activeIndex, scrollToScene, geometry }) {
+function TravelFrames({ progress, geometry }) {
+  const opacity = useTransform(progress, getFrameOpacity);
+  return (
+    <motion.div aria-hidden="true" className="home-intro-frames" style={{ opacity }}>
+      {['copy', 'art'].map(slot => (
+        <div key={slot} data-intro-travel-frame={slot}>
+          {Object.keys(EDGES).map(edge => <FrameEdge key={edge} slot={slot} edge={edge} progress={progress} geometry={geometry} />)}
+        </div>
+      ))}
+    </motion.div>
+  );
+}
+
+function Scene({ phase, progress, index, activeIndex, scrollToScene }) {
   const active = activeIndex === index;
   const [wasActive, setWasActive] = useState(active);
   const [state, setState] = useState(INITIAL_STATE[phase.key]);
@@ -90,20 +108,10 @@ function Scene({ phase, progress, index, activeIndex, scrollToScene, geometry })
   const scaleY = useTransform(progress, fade.input, [0, 1, 1, 0]);
   const illustration = getIllustrationStops(index);
   const t = useTransform(progress, illustration.input, illustration.output);
-  const copyTransform = useFrameTravel(index, 'copy', progress, geometry);
-  const artTransform = useFrameTravel(index, 'art', progress, geometry);
-  const travelOpacity = useTransform(progress, p => {
-    const { from, to } = getLayoutTravel(p);
-    return from !== to && to === index ? 1 : 0;
-  });
-  // The decorative frames travel outside the fading scene. Their dimensions
-  // change only when the stage is measured, never in response to scrolling.
-  const copyHeight = useTransform(() => `${geometry?.get()[index]?.copy.height ?? 0}px`);
   return (
-    <>
     <motion.div data-intro-scene={phase.key} data-intro-layout={phase.layout} className={`home-intro-scene home-intro-layout-${phase.layout}`} style={{ opacity }}>
       <div className="home-intro-copy-slot" data-intro-slot="copy">
-        <motion.div data-intro-copy className="home-intro-frame" style={{ transform: copyTransform, opacity: frameOpacity }}>
+        <motion.div data-intro-copy className="home-intro-frame" style={{ opacity: frameOpacity }}>
           <motion.div className="home-intro-copy" style={{ x, opacity: copyOpacity }}>
             <h2 data-intro-heading className="font-light text-[28px] lg:text-[40px] tracking-tight">{phase.title}</h2>
             <p className="text-base leading-relaxed">{phase.description}</p>
@@ -112,23 +120,14 @@ function Scene({ phase, progress, index, activeIndex, scrollToScene, geometry })
         </motion.div>
       </div>
       <div className="home-intro-art-slot" data-intro-slot="art">
-        <motion.div data-intro-art className="home-intro-frame" style={{ transform: artTransform, opacity: frameOpacity }}>
-          <motion.div className="home-intro-illustration" style={{ scaleY, opacity }}>
-            <IntroIllustration scene={phase.key} t={t} state={state} onAction={onAction} active={active} onFocus={() => { if (!active) scrollToScene(index); }} />
+        <motion.div data-intro-art className="home-intro-frame" style={{ opacity: frameOpacity }}>
+          <motion.div className="home-intro-illustration" style={{ opacity }}>
+            <IntroIllustration scene={phase.key} t={t} grow={scaleY} state={state} onAction={onAction} active={active} onFocus={() => { if (!active) scrollToScene(index); }} />
           </motion.div>
         </motion.div>
       </div>
       <div className="home-intro-baseline-slot" data-intro-slot="baseline" />
     </motion.div>
-    <div aria-hidden="true" className={`home-intro-travel home-intro-layout-${phase.layout}`}>
-      <motion.div className="home-intro-copy-slot" style={{ '--copy-height': copyHeight }}>
-        <motion.div data-intro-travel-frame="copy" className="home-intro-frame" style={{ transform: copyTransform, opacity: travelOpacity }} />
-      </motion.div>
-      <div className="home-intro-art-slot">
-        <motion.div data-intro-travel-frame="art" className="home-intro-frame" style={{ transform: artTransform, opacity: travelOpacity }} />
-      </div>
-    </div>
-    </>
   );
 }
 
@@ -189,7 +188,8 @@ export default function HomeScrollIntro() {
       <div ref={stageRef} className={`home-intro-stage w-full overflow-hidden pointer-events-none bg-black ${stage.pinned ? 'fixed inset-x-0 top-0 z-10' : 'absolute inset-x-0 bottom-0'}`}>
         <IntroTitle progress={scrollYProgress} />
         <Baseline progress={scrollYProgress} geometry={geometry} />
-        {FEATURE_PHASES.map((phase, index) => <Scene key={phase.key} phase={phase} index={index} geometry={geometry} progress={scrollYProgress} activeIndex={stage.activeIndex} scrollToScene={scrollToScene} />)}
+        <TravelFrames progress={scrollYProgress} geometry={geometry} />
+        {FEATURE_PHASES.map((phase, index) => <Scene key={phase.key} phase={phase} index={index} progress={scrollYProgress} activeIndex={stage.activeIndex} scrollToScene={scrollToScene} />)}
         <ProgressRail progress={scrollYProgress} activeIndex={stage.activeIndex} scrollToScene={scrollToScene} />
       </div>
     </section>
