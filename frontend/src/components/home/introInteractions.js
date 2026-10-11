@@ -80,3 +80,11 @@ export function dotAt(x, y) {
 export function formatCurrency(currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(128450 * ({ USD: 1, EUR: 0.92, GBP: 0.78 }[currency]));
 }
+
+export const CANDLES = [
+  [182, 187, 180, 185, 28], [185, 189, 183, 184, 36], [184, 191, 182, 189, 43],
+  [189, 194, 187, 192, 32], [192, 195, 186, 188, 49], [188, 196, 187, 194, 38],
+  [194, 199, 191, 197, 55], [197, 201, 193, 195, 42], [195, 204, 194, 202, 62],
+  [202, 206, 198, 200, 46], [200, 208, 199, 205, 59], [205, 211, 203, 209, 68],
+];
+export const QUESTION = 'How does AAPL fit my portfolio?';

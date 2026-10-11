@@ -119,28 +119,23 @@
   font-size: 14px;
 }
 
-.home-intro-cta::after {
-  content: '';
+/* Anchored to the leader line that starts at the scene's pulsing beacon. */
+.home-intro-cta--anchored {
   position: absolute;
-  inset: -1px;
-  border: 1px solid #9FB7FF;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.home-intro-cta.is-active::after {
-  animation: home-intro-sonar 1.6s ease-out infinite;
-}
-
-@keyframes home-intro-sonar {
-  from { transform: scale(1); opacity: 0.6; }
-  to { transform: scale(1.18, 1.6); opacity: 0; }
+  right: calc(100% - var(--edge));
+  top: var(--py);
+  translate: 0 -50%;
+  min-height: 36px;
+  padding: 0.5rem 1rem;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: 0 0 18px rgba(159,183,255,0.18);
 }
 
 .home-intro-cta:hover,
 .home-intro-cta:focus-visible {
   border-color: #9FB7FF;
+  box-shadow: 0 0 26px rgba(159,183,255,0.32);
 }
 
 .home-intro-cta:focus-visible {
@@ -148,15 +143,58 @@
   outline-offset: 5px;
 }
 
-.home-intro-cta:hover::after,
-.home-intro-cta:focus-visible::after {
+.home-intro-cta-beacon {
+  position: absolute;
+  left: var(--ax);
+  top: var(--ay);
+  width: 32px;
+  height: 32px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.home-intro-cta-leader {
+  stroke: #9FB7FF;
+  stroke-opacity: 0.6;
+  stroke-dasharray: 2 4;
+}
+
+.home-intro-cta-dot { fill: #9FB7FF; stroke: #000000; stroke-width: 2; }
+.home-intro-cta-glow { fill: #9FB7FF; opacity: 0.16; }
+.home-intro-cta-halo { stroke: #9FB7FF; stroke-opacity: 0.6; stroke-width: 1.5; }
+
+.home-intro-cta-ring {
+  stroke: #9FB7FF;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.home-intro-cta-mark.is-active .home-intro-cta-ring {
+  animation: home-intro-sonar 1.6s ease-out infinite;
+}
+
+.home-intro-cta-mark.is-active .home-intro-cta-ring.is-late {
+  animation-delay: 0.8s;
+}
+
+@keyframes home-intro-sonar {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(4); opacity: 0; }
+}
+
+/* The beacon holds still while its link is hovered or focused. */
+.home-intro-art-content:has(.home-intro-cta:hover) .home-intro-cta-ring,
+.home-intro-art-content:has(.home-intro-cta:focus-visible) .home-intro-cta-ring,
+.home-intro-art-content:has(.home-intro-cta-beacon:hover) .home-intro-cta-ring {
   animation-play-state: paused;
 }
 
-.home-intro-cta--static::after {
-  animation: none;
-  transform: scale(1.06, 1.2);
-  opacity: 0.3;
+/* Reduced motion: a still ring marks the same point. */
+.home-intro-cta-mark:not(.is-active) .home-intro-cta-ring:not(.is-late) {
+  opacity: 0.35;
+  transform: scale(2);
 }
 
 .home-intro-rail {
@@ -224,7 +262,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-intro-cta::after { animation: none; }
+  .home-intro-cta-ring { animation: none !important; }
 }
 
 
@@ -242,7 +280,7 @@
   }
   .home-intro-layout-C .home-intro-baseline-slot { top: 58%; }
   .home-intro-layout-C .home-intro-copy-slot { top: calc(58% + 7rem); bottom: auto; left: 7rem; right: 3rem; }
-  .home-intro-layout-C .home-intro-copy { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1.5rem; align-items: start; padding-right: 1.5rem; }
+  .home-intro-layout-C .home-intro-copy { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
   .home-intro-layout-C .home-intro-copy p { margin: 0; }
   .home-intro-layout-C .home-intro-art { width: 100%; }
   .home-intro-layout-C .home-intro-illustration { transform-origin: 50% 80%; }

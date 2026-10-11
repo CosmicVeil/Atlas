@@ -11,6 +11,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { FEATURE_PHASES, getActivePhase, getFadeStops } from '../src/components/home/introPhases.js';
 import * as phases from '../src/components/home/introPhases.js';
+import { INITIAL_STATE } from '../src/components/home/introInteractions.js';
 
 // Use the existing Vite toolchain to exercise real JSX without a browser,
 // network, or an additional DOM/test dependency.
@@ -31,10 +32,12 @@ try {
         import IntroCta from './src/components/home/IntroCta.jsx';
         import useIntroProgress from './src/components/home/useIntroProgress.js';
         import IntroIllustration, { Controls } from './src/components/home/IntroIllustrations.jsx';
+        import { getCtaSpec } from './src/components/home/ctaSpec.js';
         export const home = () => renderToStaticMarkup(<MemoryRouter><Home /></MemoryRouter>);
         export const intro = () => renderToStaticMarkup(<MemoryRouter><HomeScrollIntro /></MemoryRouter>);
         export const list = () => renderToStaticMarkup(<MemoryRouter><IntroSceneList /></MemoryRouter>);
         export const cta = props => IntroCta(props);
+        export const ctaSpec = (...args) => getCtaSpec(...args);
         export const progressHook = wrapper => {
           let result;
           function Probe() { result = useIntroProgress({ current: wrapper }); return null; }
@@ -108,7 +111,14 @@ for (const mode of ['intro', 'list']) {
       assert.ok(block.includes(phase.title));
       assert.ok(block.includes(phase.description));
       assert.match(block, new RegExp(`<a[^>]+href="${phase.route}"[^>]*>${phase.cta}</a>`));
-      assert.doesNotMatch(block, /tabindex="-1"/);
+      // The only element outside the tab order is the beacon, which repeats the labelled link.
+      for (const [tag] of block.matchAll(/<[^>]+tabindex="-1"[^>]*>/g)) {
+        assert.match(tag, /data-intro-beacon/);
+        assert.match(tag, /aria-hidden="true"/);
+        assert.match(tag, new RegExp(`href="${phase.route}"`));
+      }
+      assert.equal([...block.matchAll(/data-intro-beacon/g)].length, 1);
+      assert.equal([...block.matchAll(/data-intro-cta-mark/g)].length, 1);
       assert.match(block, /<svg[^>]+aria-hidden="true"/);
     }
     if (mode === 'list') {
@@ -627,4 +637,34 @@ test('AI and insights use readable compact art outside desktop layout C with ali
   }
   const list = render.list();
   assert.equal([...list.matchAll(/viewBox="0 0 520 360"/g)].length, 6);
+});
+
+test('each beacon sits on its own data point and follows the visitor', () => {
+  const spec = (scene, state, wide) => render.ctaSpec(scene, { ...INITIAL_STATE[scene], ...state }, wide);
+  const anchors = FEATURE_PHASES.map(({ key }) => JSON.stringify(spec(key, {}).anchor));
+  assert.equal(new Set(anchors).size, 6, 'every scene points at a different spot');
+  assert.notDeepEqual(spec('portfolio', { selected: 1 }).anchor, spec('portfolio', {}).anchor);
+  assert.notDeepEqual(spec('stock-data', { timeframe: '1Y' }).anchor, spec('stock-data', {}).anchor);
+  assert.notDeepEqual(spec('ai-analysis', { dot: 5, pinned: true }).anchor, spec('ai-analysis', {}).anchor);
+  assert.notDeepEqual(spec('advisor', { question: 0 }).anchor, spec('advisor', {}).anchor);
+  assert.notDeepEqual(spec('insights', { bar: 0 }).anchor, spec('insights', {}).anchor);
+  assert.ok(spec('insights', { bar: 0 }).anchor.y > 240, 'a loser bar is marked below the zero line');
+  for (const wide of [false, true]) {
+    for (const { key } of FEATURE_PHASES) {
+      if (wide && !['ai-analysis', 'insights'].includes(key)) continue;
+      const { anchor, pill } = spec(key, {}, wide);
+      const [w, h] = wide ? [880, 300] : [520, 360];
+      for (const [x, y] of [[anchor.x, anchor.y], [pill.edge, pill.y]]) assert.ok(x >= 0 && x <= w && y >= 0 && y <= h, `${key} stays inside the illustration`);
+    }
+  }
+});
+
+test('the beacon pulses only in the active animated scene', () => {
+  const ai = FEATURE_PHASES[2];
+  const { travel } = phases.getTransitionBeats(1);
+  const holding = (phases.getHoldRange(2)[0] + phases.getHoldRange(2)[1]) / 2;
+  assert.match(render.scene(ai, 2, holding, 2), /data-intro-cta-mark="true" class="home-intro-cta-mark is-active"/);
+  assert.match(render.scene(ai, 2, travel[0], 1), /data-intro-cta-mark="true" class="home-intro-cta-mark"/);
+  assert.match(render.list(), /data-intro-cta-mark="true" class="home-intro-cta-mark"/);
+  assert.doesNotMatch(render.list(), /home-intro-cta-mark is-active/);
 });

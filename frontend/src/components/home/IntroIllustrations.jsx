@@ -2,25 +2,20 @@ import { createContext, useContext, useEffect, useId, useRef, useSyncExternalSto
 import { animate, motion, motionValue, useMotionValue, useSpring, useTransform } from 'motion/react';
 
 import useIntroStep from './useIntroStep';
+import IntroCta, { IntroBeacon } from './IntroCta';
+import { getCtaSpec } from './ctaSpec';
 
-import { INITIAL_STATE, TIMEFRAMES, QUESTIONS, RISK_NOTES, BAR_DETAILS, dotAt, formatCurrency, getTilt, sliderKey } from './introInteractions';
+import { INITIAL_STATE, CANDLES, QUESTION, TIMEFRAMES, QUESTIONS, RISK_NOTES, BAR_DETAILS, dotAt, formatCurrency, getTilt, sliderKey } from './introInteractions';
 
 const PORTFOLIOS = [
   { name: 'Retirement', value: 128450, line: 'M325 12L345 8L365 16L385 3L405 6L425 -5L445 -2L475 -16' },
   { name: 'Growth', value: 46280, line: 'M325 12L345 15L365 1L385 9L405 -2L425 4L445 -12L475 -18' },
   { name: 'Dividends', value: 24760, line: 'M325 12L345 9L365 11L385 5L405 7L425 0L445 -3L475 -8' },
 ];
-const CANDLES = [
-  [182, 187, 180, 185, 28], [185, 189, 183, 184, 36], [184, 191, 182, 189, 43],
-  [189, 194, 187, 192, 32], [192, 195, 186, 188, 49], [188, 196, 187, 194, 38],
-  [194, 199, 191, 197, 55], [197, 201, 193, 195, 42], [195, 204, 194, 202, 62],
-  [202, 206, 198, 200, 46], [200, 208, 199, 205, 59], [205, 211, 203, 209, 68],
-];
 const DOTS = Array.from({ length: 40 * 25 }, (_, index) => ({
   x: 12 + (index % 40) * 13, y: 32 + Math.floor(index / 40) * 8, shade: (index * 37) % 3,
 }));
 const SHORTLIST = [['AAPL', 'Low'], ['MSFT', 'Low'], ['NVDA', 'High'], ['AMZN', 'Medium'], ['GOOGL', 'Medium']];
-const QUESTION = 'How does AAPL fit my portfolio?';
 const FACTORS = ['Pro · Diverse revenue sources', 'Pro · Consistent cash flow', 'Con · Technology concentration', 'Con · Price volatility'];
 const GAINERS = [['NVDA', 4.8], ['MSFT', 3.1], ['AAPL', 2.4]];
 const LOSERS = [['XOM', 2.6], ['CVX', 1.8], ['PFE', 1.2]];
@@ -38,13 +33,31 @@ function subscribeDesktopArt(onChange) {
 // ancestor's CSS scale changes, so scaling a wrapper left the labels painted at
 // stale positions.
 const GrowContext = createContext(null);
+const MarkContext = createContext(null);
 const FULL_SIZE = motionValue(1);
+
+function CtaMark() {
+  const mark = useContext(MarkContext);
+  if (!mark) return null;
+  const { spec: { anchor: { x, y }, pill, leader }, pulsing } = mark;
+  const d = leader === 'h' ? `M${x} ${y}H${pill.edge}`
+    : leader === 'hv' ? `M${x} ${y}H${pill.edge}V${pill.y}`
+      : `M${x} ${y}V${pill.y}H${pill.edge}`;
+  return <g data-intro-cta-mark className={`home-intro-cta-mark${pulsing ? ' is-active' : ''}`}>
+    <path d={d} className="home-intro-cta-leader" />
+    <circle className="home-intro-cta-glow" cx={x} cy={y} r="20" />
+    <circle className="home-intro-cta-ring" cx={x} cy={y} r="7" />
+    <circle className="home-intro-cta-ring is-late" cx={x} cy={y} r="7" />
+    <circle className="home-intro-cta-halo" cx={x} cy={y} r="11" />
+    <circle className="home-intro-cta-dot" cx={x} cy={y} r="6" />
+  </g>;
+}
 
 function Art({ children, wide }) {
   const grow = useContext(GrowContext) ?? FULL_SIZE;
   const transform = useTransform(grow, scale => `translate(0px, 240px) scale(1, ${scale}) translate(0px, -240px)`);
   return <svg className="home-intro-art tabular-nums" viewBox={wide ? "0 0 880 300" : "0 0 520 360"} fill="none" aria-hidden="true">
-    <motion.g data-intro-grow style={{ transform, transformBox: 'view-box', transformOrigin: '0 0' }}>{children}</motion.g>
+    <motion.g data-intro-grow style={{ transform, transformBox: 'view-box', transformOrigin: '0 0' }}>{children}<CtaMark /></motion.g>
   </svg>;
 }
 
@@ -210,7 +223,12 @@ function Profile({ t, state }) {
   const usdOpacity = useTransform(t, p => state.currency ? Number(state.currency === 'USD') : 1 - Math.min(1, Math.max(0, (p - 0.55) / 0.15)));
   const eurOpacity = useTransform(t, p => state.currency ? Number(state.currency === 'EUR') : Math.min(1, Math.max(0, (p - 0.55) / 0.15)));
   const value = useTransform(t, p => formatCurrency(state.currency ?? (p >= 0.7 ? 'EUR' : 'USD')));
+  const ring = useTransform(x, value => (value - 22) / 476);
   return <Art>
+    <circle cx="488" cy="36" r="18" stroke="currentColor" strokeOpacity="0.2" />
+    <motion.circle cx="488" cy="36" r="18" stroke="currentColor" strokeWidth="2" transform="rotate(-90 488 36)" style={{ pathLength: ring }} />
+    <circle cx="488" cy="31" r="5" stroke="currentColor" strokeOpacity="0.7" />
+    <path d="M479 45C481 39 495 39 497 45" stroke="currentColor" strokeOpacity="0.7" />
     <text x="12" y="63" className="home-intro-svg-muted" fontSize="14">Investment goals</text>
     {['Retirement', 'House', 'Education'].map((label, index) => <ProfileChip key={label} label={label} index={index} t={t} selected={state.goals[index]} />)}
     <text x="12" y="205" className="home-intro-svg-muted" fontSize="14">Risk tolerance</text>
@@ -244,6 +262,9 @@ function Insights({ t, state, wide }) {
   const split = wide ? explanation.length : explanation.lastIndexOf(' ', 55);
   const lines = wide ? [explanation] : [explanation.slice(0, split + 1), explanation.slice(split + 1)];
   const scaleY = useTransform(t, [0.5, 0.65], [0, 1]);
+  // The marked bar (see getCtaSpec) carries the beacon at its tip, so its
+  // percentage moves beside the beacon instead of sitting underneath it.
+  const marked = state.bar ?? 3;
   return <Art wide={wide}>
     <motion.g style={{ scaleY, originY: 1 }}>
       <rect x="12" y="16" width={wide ? 856 : 496} height="85" rx="5" fill="black" stroke="rgba(255,255,255,0.1)" />
@@ -255,12 +276,16 @@ function Insights({ t, state, wide }) {
     {GAINERS.map(([ticker, value], index) => <g key={ticker}>
       <GainBar t={t} index={index} value={value} wide={wide} />
       <text x={48 + index * (wide ? 130 : 78)} y="225" textAnchor="middle" fill="black" fontSize={wide ? 11 : 14}>{ticker}</text>
-      <text x={48 + index * (wide ? 130 : 78)} y={230 - value * 14} textAnchor="middle" fill="#5FBF93" fontSize="13">+{value}%</text>
+      {marked === index + 3
+        ? <text x={70 + index * (wide ? 130 : 78)} y={232 - value * 14} fill="#5FBF93" fontSize="13">+{value}%</text>
+        : <text x={48 + index * (wide ? 130 : 78)} y={230 - value * 14} textAnchor="middle" fill="#5FBF93" fontSize="13">+{value}%</text>}
     </g>)}
     {LOSERS.map(([ticker, value], index) => <g key={ticker}>
       <LossBar t={t} index={index} value={value} wide={wide} />
       <text x={(wide ? 474 : 294) + index * (wide ? 130 : 78)} y="227" textAnchor="middle" className="home-intro-svg-muted" fontSize={wide ? 11 : 14}>{ticker}</text>
-      <text x={(wide ? 474 : 294) + index * (wide ? 130 : 78)} y={260 + value * 14} textAnchor="middle" fill="#E07A6A" fontSize="13">−{value}%</text>
+      {marked === index
+        ? <text x={(wide ? 496 : 316) + index * (wide ? 130 : 78)} y={258 + value * 14} fill="#E07A6A" fontSize="13">−{value}%</text>
+        : <text x={(wide ? 474 : 294) + index * (wide ? 130 : 78)} y={260 + value * 14} textAnchor="middle" fill="#E07A6A" fontSize="13">−{value}%</text>}
     </g>)}
     <text x="12" y={wide ? 298 : 330} className="home-intro-svg-muted" fontSize={wide ? 12 : 14}>Session change · Sample data</text>
   </Art>;
@@ -326,7 +351,7 @@ function Controls({ scene, t, state, onAction, active, onFocus, wide = false }) 
   }
 }
 
-export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scene], onAction = () => {}, active = true, reduced = false, onFocus, grow = null }) {
+export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scene], onAction = () => {}, active = true, reduced = false, onFocus, grow = null, cta = null }) {
   const desktop = useSyncExternalStore(subscribeDesktopArt, getDesktopArt, getDesktopArt);
   const wide = desktop && !reduced && (scene === 'ai-analysis' || scene === 'insights');
   const typing = useMotionValue(0);
@@ -351,6 +376,7 @@ export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scen
   const tiltBounds = useRef(null);
   const components = { portfolio: Portfolio, 'stock-data': StockData, 'ai-analysis': AIAnalysis, advisor: Advisor, profile: Profile, insights: Insights };
   const Illustration = components[scene];
+  const spec = cta ? getCtaSpec(scene, state, wide) : null;
   if (!Illustration) return null;
   return <motion.div className={`home-intro-art-content ${active ? 'pointer-events-auto' : 'pointer-events-none'}`} style={{ rotateX: reduced ? 0 : rotateX, rotateY: reduced ? 0 : rotateY }}
     onPointerEnter={event => { if (active && !reduced && event.pointerType === 'mouse') tiltBounds.current = event.currentTarget.getBoundingClientRect(); }}
@@ -360,7 +386,15 @@ export default function IntroIllustration({ scene, t, state = INITIAL_STATE[scen
       const tilt = getTilt((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
       rotateX.set(tilt.rotateX); rotateY.set(tilt.rotateY);
     }} onPointerLeave={() => { rotateX.set(0); rotateY.set(0); tiltBounds.current = null; }}>
-    <GrowContext.Provider value={grow}><Illustration t={reveal} state={state} wide={wide} /></GrowContext.Provider>
+    <GrowContext.Provider value={grow}>
+      <MarkContext.Provider value={spec && { spec, pulsing: active && !reduced && cta.variant !== 'static' }}>
+        <Illustration t={reveal} state={state} wide={wide} />
+      </MarkContext.Provider>
+    </GrowContext.Provider>
     <Controls scene={scene} t={t} state={state} onAction={onAction} active={active} onFocus={onFocus} wide={wide} />
+    {spec && <>
+      <IntroBeacon phase={cta.phase} spec={spec} wide={wide} active={cta.variant === 'static' || active} />
+      <IntroCta {...cta} active={cta.variant === 'static' || active} spec={spec} wide={wide} />
+    </>}
   </motion.div>;
 }
