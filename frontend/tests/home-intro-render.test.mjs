@@ -30,7 +30,7 @@ try {
         import IntroSceneList from './src/components/home/IntroSceneList.jsx';
         import IntroCta from './src/components/home/IntroCta.jsx';
         import useIntroProgress from './src/components/home/useIntroProgress.js';
-        import IntroIllustration from './src/components/home/IntroIllustrations.jsx';
+        import IntroIllustration, { Controls } from './src/components/home/IntroIllustrations.jsx';
         export const home = () => renderToStaticMarkup(<MemoryRouter><Home /></MemoryRouter>);
         export const intro = () => renderToStaticMarkup(<MemoryRouter><HomeScrollIntro /></MemoryRouter>);
         export const list = () => renderToStaticMarkup(<MemoryRouter><IntroSceneList /></MemoryRouter>);
@@ -41,9 +41,28 @@ try {
           renderToStaticMarkup(<Probe />);
           return result;
         };
+        export const artWith = (scene, progress, state, active = true) => renderToStaticMarkup(<IntroIllustration scene={scene} t={motionValue(progress)} state={state} active={active} onAction={() => {}} reduced />);
+        export const responsiveArt = (scene, width, reduced = false) => {
+          globalThis.window = { matchMedia: () => ({ matches: width >= 768 }), addEventListener() {}, removeEventListener() {} };
+          try { return renderToStaticMarkup(<IntroIllustration scene={scene} t={motionValue(1)} reduced={reduced} />); }
+          finally { delete globalThis.window; }
+        };
         export const art = (scene, progress) => renderToStaticMarkup(<IntroIllustration scene={scene} t={motionValue(progress)} />);
-        export const scene = (phase, index, progress, activeIndex) => renderToStaticMarkup(
-          <MemoryRouter><Scene phase={phase} index={index} progress={motionValue(progress)} activeIndex={activeIndex} scrollToScene={() => {}} /></MemoryRouter>
+        export const illustrationProps = props => {
+          let result;
+          function Probe() { result = IntroIllustration({ scene: 'portfolio', t: motionValue(1), ...props }); return null; }
+          renderToStaticMarkup(<Probe />);
+          return result.props;
+        };
+        export const controls = props => {
+          let result;
+          function Probe() { result = Controls({ t: motionValue(1), active: true, ...props }); return null; }
+          renderToStaticMarkup(<Probe />);
+          const flatten = nodes => React.Children.toArray(nodes).flatMap(node => node.type === React.Fragment ? flatten(node.props.children) : [node.props]);
+          return flatten(result);
+        };
+        export const scene = (phase, index, progress, activeIndex, slots = []) => renderToStaticMarkup(
+          <MemoryRouter><Scene phase={phase} index={index} progress={motionValue(progress)} activeIndex={activeIndex} geometry={motionValue(slots)} scrollToScene={() => {}} /></MemoryRouter>
         );
       `,
       resolveDir: fileURLToPath(new URL('..', import.meta.url)),
@@ -61,6 +80,10 @@ try {
       setup(builder) {
         builder.onLoad({ filter: /HomeScrollIntro\.jsx$/ }, async ({ path }) => ({
           contents: `${await readFile(path, 'utf8')}\nexport { Scene };`,
+          loader: 'jsx',
+        }));
+        builder.onLoad({ filter: /IntroIllustrations\.jsx$/ }, async ({ path }) => ({
+          contents: `${await readFile(path, 'utf8')}\nexport { Controls };`,
           loader: 'jsx',
         }));
       },
@@ -91,7 +114,7 @@ for (const mode of ['intro', 'list']) {
       assert.equal([...html.matchAll(/home-intro-cta--static/g)].length, 6);
       assert.doesNotMatch(html, /is-active|position:fixed|position:sticky/);
     } else {
-      assert.equal([...html.matchAll(/<button /g)].length, 6);
+      assert.equal([...html.matchAll(/<button [^>]*>/g)].filter(([tag]) => !tag.includes('data-intro-interactive')).length, 6);
       assert.equal([...html.matchAll(/aria-label="(?:Portfolio Management|Stock Data Explorer|AI Market Analysis|Personal AI Advisor|User Profile|Market Insights)"/g)].length, 6);
     }
   });
@@ -205,8 +228,9 @@ test('only the dominant scene renders a clickable, pulsing CTA, including partia
   assert.equal(typeof phases.getInteractivePhase, 'function');
   const samples = Array.from({ length: 61 }, (_, step) => step / 60);
   for (let index = 1; index < 6; index++) {
-    const start = phases.getPhaseRange(index)[0];
-    for (const fraction of [0.9, 0.51, 0.5, 0.49, 0.1]) samples.push(start - phases.CROSSFADE * fraction);
+    for (const [start, end] of Object.values(phases.getTransitionBeats(index - 1))) {
+      for (const fraction of [0.1, 0.49, 0.5, 0.51, 0.9]) samples.push(start + (end - start) * fraction);
+    }
   }
   for (const p of samples) {
     const activeIndex = phases.getInteractivePhase(p);
@@ -230,11 +254,11 @@ test('only the dominant scene renders a clickable, pulsing CTA, including partia
 
 test('rendered handoffs separate the copy and advance the artwork before the full-opacity hold', () => {
   for (let index = 0; index < 6; index++) {
-    const start = phases.getPhaseRange(index)[0];
-    const arriving = start - phases.CROSSFADE * 0.25;
+    const start = phases.getHoldRange(index)[0];
+    const arriving = start - phases.BEAT;
     const html = render.scene(FEATURE_PHASES[index], index, arriving, index);
     const copyOpacity = Number(html.match(/class="home-intro-copy" style="[^"]*opacity:([\d.e-]+)/)?.[1]);
-    assert.ok(Math.abs(copyOpacity - 1) < 1e-12, `Incoming copy opacity: ${copyOpacity}`);
+    assert.ok(Math.abs(copyOpacity) < 1e-12, `Incoming copy opacity: ${copyOpacity}`);
     if (index > 0) {
       const outgoing = render.scene(FEATURE_PHASES[index - 1], index - 1, arriving, index);
       assert.match(outgoing, /class="home-intro-copy" style="[^"]*opacity:0(?:;|")/);
@@ -252,21 +276,15 @@ test('rendered handoffs separate the copy and advance the artwork before the ful
   }
 });
 
-test('rendered CTAs inherit no extra fading or displacement while their scene is nearly opaque', () => {
+test('rendered copy and CTAs are settled and clickable throughout the hold', () => {
   for (const [index, phase] of FEATURE_PHASES.entries()) {
-    const [start, end] = phases.getPhaseRange(index);
-    for (const opacity of [0.9, 0.95, 1]) {
-      for (const p of [start - (1 - opacity) * phases.CROSSFADE, end - opacity * phases.CROSSFADE]) {
-        const html = render.scene(phase, index, p, phases.getInteractivePhase(p));
-        const sceneOpacity = Number(html.match(/data-intro-scene="[^"]+"[^>]+style="opacity:([\d.e-]+)/)?.[1]);
-        const copyStyle = html.match(/class="home-intro-copy" style="([^"]+)"/)?.[1];
-        const copyOpacity = Number(copyStyle?.match(/opacity:([\d.e-]+)/)?.[1]);
-        assert.ok(Math.abs(sceneOpacity - opacity) < 1e-12);
-        assert.equal(copyOpacity, 1, `${phase.key} CTA must not lag its scene`);
-        assert.ok(sceneOpacity * copyOpacity >= sceneOpacity);
-        assert.match(copyStyle, /transform:none/);
-        assert.match(html, /<a[^>]+data-intro-cta[^>]+pointer-events-auto/);
-      }
+    const [start, end] = phases.getHoldRange(index);
+    for (const p of [start, (start + end) / 2, end]) {
+      const html = render.scene(phase, index, p, phases.getInteractivePhase(p));
+      const copyStyle = html.match(/class="home-intro-copy" style="([^"]+)"/)?.[1];
+      assert.equal(Number(copyStyle?.match(/opacity:([\d.e-]+)/)?.[1]), 1);
+      assert.match(copyStyle, /transform:none/);
+      assert.match(html, /<a[^>]+data-intro-cta[^>]+pointer-events-auto/);
     }
   }
 });
@@ -298,4 +316,286 @@ test('scrollToScene uses the wrapper document position and viewport, with a safe
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
     else delete globalThis.window;
   }
+});
+
+
+for (const mode of ['intro', 'list']) {
+  test(`${mode} exposes copy, heading, art and keyboard interaction contracts for every scene`, () => {
+    const html = render[mode]();
+    const scenes = [...html.matchAll(/data-intro-scene="([^"]+)"/g)];
+    if (mode === 'intro') assert.deepEqual([...html.matchAll(/data-intro-layout="([^"]+)"/g)].map(m => m[1]), ['A', 'B', 'C', 'A', 'B', 'C']);
+    for (const [i, scene] of scenes.entries()) {
+      const block = html.slice(scene.index, scenes[i + 1]?.index);
+      for (const attr of ['copy', 'heading', 'art']) assert.equal([...block.matchAll(new RegExp(`data-intro-${attr}="true"`, 'g'))].length, 1);
+      assert.ok(block.indexOf('data-intro-copy') < block.indexOf('data-intro-cta'));
+      const controls = [...block.matchAll(/<(?:button|div)[^>]*data-intro-interactive[^>]*>/g)];
+      assert.ok(controls.length >= 2, scene[1]);
+      for (const [control] of controls) {
+        assert.doesNotMatch(control, /href=/);
+        assert.match(control, /aria-label=/);
+        if (control.includes('role="slider"')) {
+          assert.match(control, /aria-valuenow="[\d.]+"/);
+          assert.match(control, /tabindex="0"/);
+        } else assert.match(control, /type="button"/);
+      }
+    }
+  });
+}
+
+test('only the active scene enables illustration pointer events', () => {
+  for (const [index, phase] of FEATURE_PHASES.entries()) {
+    for (const active of [true, false]) {
+      const html = render.scene(phase, index, phases.getSceneScrollProgress(index), active ? index : -1);
+      const controls = [...html.matchAll(/<(?:button|div)[^>]*data-intro-interactive[^>]*>/g)];
+      assert.ok(controls.length >= 2);
+      for (const [control] of controls) assert.ok(control.includes(active ? 'pointer-events-auto' : 'pointer-events-none'));
+    }
+  }
+});
+
+test('each first interaction visibly changes the illustration, including at hold entry', async () => {
+  const { INITIAL_STATE, reduceInteraction } = await import('../src/components/home/introInteractions.js');
+  const cases = [
+    ['portfolio', { type: 'select', index: 0 }, /Retirement value · \$128,450/],
+    ['stock-data', { type: 'timeframe', value: '1D' }, /aria-label="1D"[^>]*aria-pressed="true"/],
+    ['ai-analysis', { type: 'pin', index: 0 }, /Pinned · AAPL/],
+    ['advisor', { type: 'question', index: 0 }, /Technology represents 42%/],
+    ['profile', { type: 'goal', index: 0, current: true }, /aria-label="Retirement"[^>]*aria-pressed="false"/],
+    ['insights', { type: 'bar', index: 0 }, /XOM · −2.6%/],
+  ];
+  for (const [scene, action, expected] of cases) {
+    const state = reduceInteraction(scene, INITIAL_STATE[scene], action);
+    assert.notDeepEqual(state, INITIAL_STATE[scene]);
+    for (const progress of [0.35, 1]) {
+      const before = render.artWith(scene, progress, INITIAL_STATE[scene]);
+      const after = unescape(render.artWith(scene, progress, state));
+      assert.notEqual(after, before, scene);
+      assert.match(after, expected);
+    }
+  }
+  const profile = reduceInteraction('profile', INITIAL_STATE.profile, { type: 'currency', value: 'GBP' });
+  assert.match(render.artWith('profile', 0.35, profile), /£100,191/);
+});
+
+test('interaction overrides redraw paths, show notes, highlight rows and reveal explanations', async () => {
+  const { INITIAL_STATE, reduceInteraction } = await import('../src/components/home/introInteractions.js');
+  const art = (scene, action) => render.artWith(scene, 0.35, reduceInteraction(scene, INITIAL_STATE[scene], action));
+  const totalLine = render.artWith('portfolio', 1, INITIAL_STATE.portfolio).match(/<path d="M12 240[^>]+/)?.[0];
+  assert.ok(totalLine);
+  assert.ok(!art('portfolio', { type: 'select', index: 1 }).includes(totalLine));
+  assert.match(art('portfolio', { type: 'hover', index: 0 }), /\+5.2% since last month/);
+  assert.match(art('stock-data', { type: 'crosshair', value: 1 }), /O 205   H 211   L 203   C 209/);
+  assert.match(art('ai-analysis', { type: 'note', index: 0 }), /Lower sample price variability/);
+  assert.match(art('profile', { type: 'risk', value: 100 }), /aria-valuenow="100"/);
+  assert.match(art('insights', { type: 'bar', index: 1 }), /CVX · −1.8%/);
+});
+
+test('every selected timeframe keeps candle prices below the chips and above the baseline', async () => {
+  const { INITIAL_STATE, reduceInteraction } = await import('../src/components/home/introInteractions.js');
+  for (const timeframe of ['1D', '1M', '1Y']) {
+    const state = reduceInteraction('stock-data', INITIAL_STATE['stock-data'], { type: 'timeframe', value: timeframe });
+    const html = render.artWith('stock-data', 1, state);
+    const wicks = [...html.matchAll(/<path d="M[\d.]+ ([\d.-]+)V([\d.-]+)"[^>]*stroke-opacity="0.55"/g)];
+    assert.equal(wicks.length, 12);
+    for (const [, high, low] of wicks) {
+      assert.ok(Number(high) >= 70, `${timeframe} high ${high} overlaps the chart header`);
+      assert.ok(Number(low) <= 230, `${timeframe} low ${low} crosses the baseline`);
+      assert.ok(Number(high) < Number(low));
+    }
+  }
+});
+
+test('actual buttons dispatch each scene interaction and render its result', async () => {
+  const { INITIAL_STATE, reduceInteraction } = await import('../src/components/home/introInteractions.js');
+  const cases = [
+    ['portfolio', 'Retirement', /Retirement value · \$128,450/],
+    ['stock-data', '1D', /aria-label="1D"[^>]*aria-pressed="true"/],
+    ['ai-analysis', 'Explore sample stock field; use arrow keys', /Pinned · AAPL/],
+    ['advisor', 'How concentrated is this portfolio?', /Technology represents 42%/],
+    ['profile', 'Retirement', /aria-label="Retirement"[^>]*aria-pressed="false"/],
+    ['insights', 'XOM session explanation', /XOM · −2.6%/],
+  ];
+  for (const [scene, label, expected] of cases) {
+    let state = INITIAL_STATE[scene];
+    const controls = render.controls({ scene, state, onAction: action => { state = reduceInteraction(scene, state, action); } });
+    const button = controls.find(control => control['aria-label'] === label);
+    button.onClick({ detail: 0, clientX: 0, clientY: 0, currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) } });
+    assert.match(unescape(render.artWith(scene, 1, state)), expected);
+  }
+});
+
+test('risk slider handles keyboard, drag capture, cancellation and unrelated pointers', async () => {
+  const { INITIAL_STATE, reduceInteraction } = await import('../src/components/home/introInteractions.js');
+  let state = { ...INITIAL_STATE.profile, risk: 50 };
+  const slider = () => render.controls({ scene: 'profile', state, onAction: action => { state = reduceInteraction('profile', state, action); } }).find(control => control.role === 'slider');
+  let prevented = 0;
+  slider().onKeyDown({ key: 'ArrowRight', preventDefault: () => prevented++ });
+  assert.equal(state.risk, 60);
+  slider().onKeyDown({ key: 'Home', preventDefault: () => prevented++ });
+  assert.equal(state.risk, 0);
+  slider().onKeyDown({ key: 'End', preventDefault: () => prevented++ });
+  assert.equal(state.risk, 100);
+  slider().onKeyDown({ key: 'Tab', preventDefault: () => prevented++ });
+  assert.equal(prevented, 3);
+
+  const target = {
+    getBoundingClientRect: () => ({ left: 100, top: 0, width: 200, height: 40 }),
+    setPointerCapture: id => { assert.equal(id, 7); },
+    releasePointerCapture: id => { assert.equal(id, 7); },
+  };
+  const control = slider();
+  const event = (clientX, pointerId = 7) => ({ clientX, clientY: 20, pointerId, isPrimary: true, currentTarget: target });
+  control.onPointerDown({ ...event(150), isPrimary: false });
+  assert.equal(state.risk, 100);
+  control.onPointerDown(event(150));
+  assert.equal(state.risk, 25);
+  control.onPointerMove(event(250, 8));
+  assert.equal(state.risk, 25);
+  control.onPointerMove(event(250));
+  assert.equal(state.risk, 75);
+  control.onPointerCancel();
+  control.onPointerMove(event(300));
+  assert.equal(state.risk, 75);
+  control.onPointerDown(event(200));
+  control.onPointerUp(event(200));
+  control.onPointerMove(event(300));
+  assert.equal(state.risk, 50);
+  control.onPointerDown(event(150));
+  control.onLostPointerCapture();
+  control.onPointerMove(event(300));
+  assert.equal(state.risk, 25);
+});
+
+
+test('desktop scroll samples expose only the current scene, with measured layout geometry', async () => {
+  const { subscribeIntroProgress } = await import('../src/components/home/useIntroProgress.js');
+  const slots = FEATURE_PHASES.map(({ layout }) => ({
+    copy: { x: layout === 'B' ? 716 : 112, y: layout === 'C' ? 544 : 160, width: layout === 'C' ? 1120 : 460, height: 208 },
+    art: { x: layout === 'A' ? 691 : 112, y: 160, width: layout === 'C' ? 880 : 500, height: 340 },
+    baseline: { x: 112, y: layout === 'C' ? 464 : 400, width: 1120, height: 1 },
+  }));
+  let top = 0;
+  let progress = 0;
+  let pending;
+  const listeners = new Map();
+  const win = {
+    innerHeight: 800,
+    addEventListener: (name, callback) => listeners.set(name, callback),
+    removeEventListener: name => listeners.delete(name),
+    requestAnimationFrame: callback => { pending = callback; return 1; },
+    cancelAnimationFrame: () => { pending = undefined; },
+  };
+  const cleanup = subscribeIntroProgress({ getBoundingClientRect: () => ({ top, height: 8560 }) }, { set: p => { progress = p; } }, win);
+  const holds = FEATURE_PHASES.map((_, i) => phases.getSceneScrollProgress(i));
+  for (const p of [0, ...holds, 1, ...holds.toReversed(), 0]) {
+    top = -p * (8560 - 800);
+    listeners.get('scroll')();
+    pending();
+    const owner = phases.getInteractivePhase(progress);
+    FEATURE_PHASES.forEach((phase, index) => {
+      const html = render.scene(phase, index, progress, owner, slots);
+      const shell = html.match(/<[^>]+data-intro-scene=[^>]+>/)?.[0];
+      assert.ok(shell);
+      assert.match(shell, new RegExp(`opacity:${index === owner ? 1 : 0}(?:;|")`), `${phase.key} at ${p}`);
+      if (index === owner) {
+        assert.match(html, /class="home-intro-copy" style="[^"]*opacity:1/);
+        assert.match(html, /<a[^>]+data-intro-cta[^>]+pointer-events-auto/);
+        assert.match(html, /data-intro-interactive[^>]+pointer-events-auto/);
+      }
+    });
+  }
+  cleanup();
+  assert.equal(listeners.size, 0);
+});
+
+test('empty frames remain visible and travel between measured slots while scene content is hidden', () => {
+  const slots = FEATURE_PHASES.map((_, i) => ({
+    copy: { x: 100 + i * 100, y: 200 + i * 50, width: 400, height: 200 },
+    art: { x: 600 - i * 50, y: 200, width: 500 + i * 20, height: 300 },
+  }));
+  for (let i = 1; i < 6; i++) {
+    const { travel } = phases.getTransitionBeats(i - 1);
+    const p = (travel[0] + travel[1]) / 2;
+    const html = render.scene(FEATURE_PHASES[i], i, p, phases.getInteractivePhase(p), slots);
+    assert.match(html, /data-intro-scene=[^>]+opacity:0/);
+    assert.match(html, /data-intro-travel-frame="copy"[^>]+opacity:1/);
+    const [, x, y] = html.match(/data-intro-travel-frame="copy"[^>]+translate\(([\d.-]+)px, ([\d.-]+)px\)/);
+    assert.ok(Math.abs(Number(x) + 50) < 1e-9);
+    assert.ok(Math.abs(Number(y) + 25) < 1e-9);
+    assert.match(html, /data-intro-travel-frame="art"[^>]+opacity:1/);
+  }
+});
+
+test('currency chips align their visible label and outline with each clickable target', async () => {
+  const { INITIAL_STATE, reduceInteraction } = await import('../src/components/home/introInteractions.js');
+  for (const [index, currency] of ['USD', 'EUR', 'GBP'].entries()) {
+    let state = INITIAL_STATE.profile;
+    const control = render.controls({ scene: 'profile', state, onAction: action => { state = reduceInteraction('profile', state, action); } }).find(control => control['aria-label'] === currency);
+    control.onClick();
+    const html = render.artWith('profile', 1, state);
+    const x = 238 + index * 47;
+    assert.match(html, new RegExp(`<rect x="${x}" y="305" width="47" height="36"`));
+    assert.match(html, new RegExp(`<text x="${x + 23.5}" y="327" text-anchor="middle"[^>]*>${currency}</text>`));
+    assert.equal(control.style['--x'], `${x / 520 * 100}%`);
+    assert.equal(control.style['--w'], `${47 / 520 * 100}%`);
+    assert.match(html, new RegExp(`aria-label="${currency}" aria-pressed="true"`));
+  }
+});
+
+
+test('the entire active art box receives pointer events and tilts only for a mouse without reduced motion', () => {
+  for (const active of [true, false]) {
+    for (const reduced of [true, false]) {
+      for (const pointerType of ['mouse', 'touch', 'pen']) {
+        const props = render.illustrationProps({ active, reduced });
+        assert.match(props.className, new RegExp(active ? 'pointer-events-auto' : 'pointer-events-none'));
+        let measurements = 0;
+        const event = { pointerType, clientX: 200, clientY: 0, currentTarget: {
+          getBoundingClientRect: () => { measurements++; return { left: 0, top: 0, width: 200, height: 100 }; },
+        } };
+        const value = axis => typeof props.style[axis] === 'number' ? props.style[axis] : props.style[axis].get();
+        props.onPointerMove(event);
+        assert.equal(value('rotateX'), 0, 'ignore movement before entry');
+        props.onPointerEnter(event);
+        props.onPointerMove(event);
+        const enabled = active && !reduced && pointerType === 'mouse';
+        assert.equal(measurements, enabled ? 1 : 0);
+        assert.equal(value('rotateX'), enabled ? 4 : 0);
+        assert.equal(value('rotateY'), enabled ? 4 : 0);
+        props.onPointerMove({ ...event, clientX: 0, clientY: 100 });
+        assert.equal(measurements, enabled ? 1 : 0, 'reuse entry bounds during movement');
+        assert.equal(value('rotateX'), enabled ? -4 : 0);
+        assert.equal(value('rotateY'), enabled ? -4 : 0);
+        props.onPointerLeave();
+        assert.equal(value('rotateX'), 0);
+        assert.equal(value('rotateY'), 0);
+        props.onPointerMove(event);
+        assert.equal(value('rotateX'), 0, 'ignore movement after leave');
+      }
+    }
+  }
+});
+
+
+test('AI and insights use readable compact art outside desktop layout C with aligned controls', () => {
+  for (const scene of ['ai-analysis', 'insights']) {
+    for (const [width, reduced, wide] of [[390, false, false], [767, false, false], [768, false, true], [1280, false, true], [1280, true, false]]) {
+      const html = render.responsiveArt(scene, width, reduced);
+      assert.match(html, new RegExp(`viewBox="0 0 ${wide ? '880 300' : '520 360'}"`));
+      if (!wide) {
+        assert.doesNotMatch(html, /font-size="(?:11|12)"/);
+        if (scene === 'ai-analysis') {
+          assert.match(html, /<text x="286" y="68"[^>]*>AAPL/);
+          assert.match(html, new RegExp(`--x:${286 / 520 * 100}%[^>]*aria-label="AAPL risk note"`));
+          assert.match(html, /1,000 stocks analysed/);
+        } else {
+          assert.match(html, /<text x="294" y="227"[^>]*>XOM/);
+          assert.match(html, new RegExp(`--x:${260 / 520 * 100}%[^>]*aria-label="XOM session explanation"`));
+          assert.match(html, /<text x="26" y="85"/);
+        }
+      }
+    }
+  }
+  const list = render.list();
+  assert.equal([...list.matchAll(/viewBox="0 0 520 360"/g)].length, 6);
 });

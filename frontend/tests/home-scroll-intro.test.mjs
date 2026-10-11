@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
-  INTRO_END, OUTRO_START, CROSSFADE, FEATURE_PHASES,
+  INTRO_END, OUTRO_START, FEATURE_PHASES,
   getPhaseRange, getActivePhase, getLocalProgress, getFadeStops,
 } from '../src/components/home/introPhases.js';
 import { getReducedMotion, getServerReducedMotion, subscribeReducedMotion } from '../src/components/home/reducedMotion.js';
@@ -59,7 +59,7 @@ test('phase ranges cover the scene timeline contiguously and reject invalid indi
   assert.equal(getPhaseRange(5)[1], OUTRO_START);
   for (let i = 0; i < 6; i++) {
     const [start, end] = getPhaseRange(i);
-    close(end - start, (OUTRO_START - INTRO_END) / 6);
+    close((end - start) * phases.TOTAL_VH, i === 0 || i === 5 ? 135 : 170);
     if (i < 5) assert.equal(end, getPhaseRange(i + 1)[0]);
   }
   for (const index of [-1, 6, 1.5, NaN, undefined]) {
@@ -96,7 +96,7 @@ test('local progress clamps and reverses through every feature without accumulat
   }
 });
 
-test('vignettes cross-fade without gaps and clear before the wrapper ends', () => {
+test('handoffs retract completely before travel and grow without overlapping content', () => {
   for (let i = 0; i < 6; i++) {
     const { input, output } = getFadeStops(i);
     assert.deepEqual(output, [0, 1, 1, 0]);
@@ -104,11 +104,15 @@ test('vignettes cross-fade without gaps and clear before the wrapper ends', () =
     assert.equal(fadeAt(i, 0), 0);
     assert.equal(fadeAt(i, 1), 0);
     if (i < 5) {
-      const boundary = getPhaseRange(i)[1];
-      for (const p of [boundary - CROSSFADE, boundary, boundary + CROSSFADE]) {
-        close(fadeAt(i, p) + fadeAt(i + 1, p), 1);
+      const { travel } = phases.getTransitionBeats(i);
+      for (const p of [travel[0], (travel[0] + travel[1]) / 2, travel[1]]) {
+        close(fadeAt(i, p), 0);
+        close(fadeAt(i + 1, p), 0);
       }
     }
+  }
+  for (let step = 0; step <= 10000; step++) {
+    assert.ok(FEATURE_PHASES.filter((_, i) => fadeAt(i, step / 10000) > 1e-12).length <= 1);
   }
   assert.ok(getFadeStops(0).input[0] < INTRO_END);
   assert.ok(getFadeStops(5).input[3] < 1);
@@ -117,7 +121,7 @@ test('vignettes cross-fade without gaps and clear before the wrapper ends', () =
 test('wrapper progress scrubs ordered scenes and parks the stage at completion', () => {
   assert.match(intro, /useIntroProgress\(wrapperRef\)/);
   assert.doesNotMatch(intro, /useScroll/);
-  assert.match(intro, /h-\[760vh\]/);
+  assert.match(intro, /h-\[1070vh\]/);
   assert.match(intro, /pinned: progress < 1/);
   assert.match(intro, /stage\.pinned \? 'fixed inset-x-0 top-0 z-10' : 'absolute inset-x-0 bottom-0'/);
   assert.match(intro, /FEATURE_PHASES\.map\(\(phase, index\)/);
@@ -280,22 +284,25 @@ test('scene contract has exact keys, card copy, routes and link labels in both m
   assert.match(art, /aria-hidden="true"/);
 });
 
-test('timing leaves a readable hold, a 15% handoff, and no title overlap', () => {
-  assert.equal(phases.TOTAL_VH, 760);
-  close(INTRO_END * 760, 60);
-  close((1 - OUTRO_START) * 760, 40);
-  close((getPhaseRange(0)[1] - INTRO_END) * 760, 110);
-  close(CROSSFADE, (getPhaseRange(0)[1] - INTRO_END) * 0.15);
+test('v2 timing budgets readable holds and three equal transition beats with no title overlap', () => {
+  assert.deepEqual([phases.TITLE_VH, phases.HOLD_VH, phases.TRANSITION_VH, phases.RELEASE_VH, phases.TOTAL_VH], [70, 100, 70, 50, 1070]);
+  close(INTRO_END * 1070, 70);
+  close((1 - OUTRO_START) * 1070, 50);
   assert.ok(phases.TITLE_FOLD_END <= getFadeStops(0).input[0]);
   assert.match(intro, /TITLE_FOLD_END/);
   for (let i = 0; i < 6; i++) {
-    const [start, end] = getPhaseRange(i);
-    const { input } = getFadeStops(i);
-    assert.ok(input[2] - input[1] >= (end - start) * 0.8);
+    const [start, end] = phases.getHoldRange(i);
+    close((end - start) * 1070, 100);
+    if (i === 5) continue;
+    const { retract, travel, grow } = phases.getTransitionBeats(i);
+    assert.equal(retract[0], end);
+    assert.equal(retract[1], travel[0]);
+    assert.equal(travel[1], grow[0]);
+    assert.equal(grow[1], phases.getHoldRange(i + 1)[0]);
+    for (const [a, b] of [retract, travel, grow]) close((b - a) * 1070, 70 / 3);
   }
-  for (let p = 0; p <= 1; p += 0.001) {
-    assert.ok(FEATURE_PHASES.filter((_, i) => fadeAt(i, p) > 0).length <= 2);
-  }
+  for (const index of [-1, 6, NaN, 0.5]) assert.throws(() => phases.getHoldRange(index), RangeError);
+  for (const index of [-1, 5, NaN, 0.5]) assert.throws(() => phases.getTransitionBeats(index), RangeError);
 });
 
 test('wrapper geometry clamps, rewinds and handles invalid or zero scroll distances', () => {
@@ -388,32 +395,30 @@ test('manual scroll subscription advances through overflow ancestors, restores, 
 });
 
 
-test('sixty whole-document scroll samples expose ordered scenes and equally visible CTAs', () => {
-  // The browser scrolls the entire document: the grid and footer change where
-  // its 60 steps land in the intro. Cover desktop and taller mobile content.
+test('120 whole-document steps show all holds and at least four steps per handoff', () => {
   for (const [viewport, contentHeight] of [[900, 1400], [1000, 2200], [844, 3400]]) {
     const wrapperHeight = phases.TOTAL_VH / 100 * viewport;
-    const scrollHeight = wrapperHeight + contentHeight;
     const seen = [];
-    for (let step = 0; step <= 60; step++) {
-      const scrollY = step / 60 * (scrollHeight - viewport);
-      const p = phases.getWrapperProgress(-scrollY, wrapperHeight, viewport);
+    const fullSteps = Array.from({ length: 6 }, () => []);
+    for (let step = 0; step <= 120; step++) {
+      const p = phases.getWrapperProgress(-step / 120 * (wrapperHeight + contentHeight - viewport), wrapperHeight, viewport);
+      assert.ok(FEATURE_PHASES.filter((_, i) => copyAt(i, p) > 0).length <= 1);
       FEATURE_PHASES.forEach((_, index) => {
         const opacity = fadeAt(index, p);
-        if (opacity > 0) assert.ok(p > phases.TITLE_FOLD_END);
-        if (opacity > 0.5) assert.equal(phases.getInteractivePhase(p), index);
-        if (opacity >= 0.9) {
-          const ctaOpacity = opacity * copyAt(index, p);
-          assert.ok(ctaOpacity >= opacity - 1e-12,
-            `${FEATURE_PHASES[index].key} at step ${step}: CTA ${ctaOpacity}, scene ${opacity}`);
+        if (opacity > 0) {
+          assert.ok(p > phases.TITLE_FOLD_END);
+          assert.equal(phases.getInteractivePhase(p), index);
         }
         if (opacity === 1) {
+          assert.equal(copyAt(index, p), 1);
           assert.equal(getActivePhase(p), index);
+          fullSteps[index].push(step);
           if (!seen.includes(index)) seen.push(index);
         }
       });
     }
     assert.deepEqual(seen, [0, 1, 2, 3, 4, 5]);
+    for (let i = 1; i < 6; i++) assert.ok(fullSteps[i][0] - fullSteps[i - 1].at(-1) >= 4);
   }
 });
 
@@ -425,13 +430,14 @@ test('interaction follows the dominant scene through every handoff in either dir
     if (dominant !== -1) assert.equal(phases.getInteractivePhase(p), dominant);
   }
   for (let index = 1; index < 6; index++) {
-    const midpoint = getPhaseRange(index)[0] - CROSSFADE / 2;
+    const midpoint = getPhaseRange(index)[0];
     const samples = [midpoint - 1e-9, midpoint, midpoint + 1e-9];
     assert.deepEqual(samples.map(phases.getInteractivePhase), [index - 1, index, index]);
     assert.deepEqual(samples.reverse().map(phases.getInteractivePhase), [index, index, index - 1]);
   }
   for (const p of [-Infinity, -1, 0, NaN]) assert.equal(phases.getInteractivePhase(p), -1);
-  for (const p of [OUTRO_START, 1, Infinity]) assert.equal(phases.getInteractivePhase(p), 6);
+  assert.equal(phases.getInteractivePhase(OUTRO_START), 5);
+  for (const p of [OUTRO_START + phases.BEAT, 1, Infinity]) assert.equal(phases.getInteractivePhase(p), 6);
   assert.match(intro, /activeIndex: getInteractivePhase\(progress\)/);
 });
 
@@ -442,7 +448,7 @@ test('copy fades sequentially so overlapping illustrations never double-print te
     assert.deepEqual(output, [0, 1, 1, 0]);
     assert.equal(copyAt(index, phases.getSceneScrollProgress(index)), 1);
     assert.ok(input.every((p, i) => !i || p > input[i - 1]));
-    if (index < 5) assert.equal(input[3], phases.getCopyFadeStops(index + 1).input[0]);
+    if (index < 5) close(phases.getCopyFadeStops(index + 1).input[0] - input[3], phases.BEAT);
   }
   for (let step = 0; step <= 10000; step++) {
     const p = step / 10000;
@@ -452,19 +458,20 @@ test('copy fades sequentially so overlapping illustrations never double-print te
   }
   for (const index of [-1, 6, NaN, 0.5]) assert.throws(() => phases.getCopyFadeStops(index), RangeError);
   assert.match(intro, /getCopyFadeStops\(index\)/);
-  assert.match(intro, /className="home-intro-copy" style=\{\{ y, opacity: copyOpacity \}\}/);
+  assert.match(intro, /className="home-intro-copy" style=\{\{ x, opacity: copyOpacity \}\}/);
 });
 
-test('CTA effective opacity matches its nearly opaque scene on arrival and departure, forwards and backwards', () => {
+test('copy and CTA ownership stay settled throughout holds and rewind symmetrically', () => {
   for (let index = 0; index < 6; index++) {
-    const [start, end] = getPhaseRange(index);
-    const samples = [start, phases.getSceneScrollProgress(index), end - CROSSFADE];
-    for (const opacity of [0.9, 0.95, 0.99, 1]) {
-      samples.push(start - (1 - opacity) * CROSSFADE, end - opacity * CROSSFADE);
-    }
+    const [start, end] = phases.getHoldRange(index);
+    const samples = [start, (start + end) / 2, end];
     for (const p of [...samples, ...samples.reverse()]) {
-      assert.equal(copyAt(index, p), 1, `Copy must be settled at ${p}`);
-      close(fadeAt(index, p) * copyAt(index, p), fadeAt(index, p));
+      assert.equal(copyAt(index, p), 1);
+      assert.equal(fadeAt(index, p), 1);
+      assert.equal(phases.getInteractivePhase(p), index);
+    }
+    for (const p of [start - phases.BEAT / 2, end + phases.BEAT / 2]) {
+      close(copyAt(index, p), 0.5);
       assert.equal(phases.getInteractivePhase(p), index);
     }
   }
@@ -474,11 +481,65 @@ test('illustrations grow during the incoming fade and reach a substantial frame 
   assert.equal(typeof phases.getIllustrationStops, 'function');
   for (let index = 0; index < 6; index++) {
     const { input, output } = phases.getIllustrationStops(index);
-    const [start, end] = getPhaseRange(index);
-    assert.deepEqual(input, [start - CROSSFADE, start, end - CROSSFADE]);
+    const [start, end] = phases.getHoldRange(index);
+    assert.deepEqual(input, [start - phases.BEAT, start, start + (end - start) * 0.8]);
     assert.deepEqual(output, [0, 0.35, 1]);
   }
   for (const index of [-1, 6, NaN, 0.5]) assert.throws(() => phases.getIllustrationStops(index), RangeError);
   assert.match(intro, /getIllustrationStops\(index\)/);
   assert.match(intro, /useTransform\(progress, illustration.input, illustration.output\)/);
+});
+
+
+test('layouts rotate and empty frames move only during the travel beat, reversibly', () => {
+  assert.deepEqual(FEATURE_PHASES.map(p => p.layout), ['A', 'B', 'C', 'A', 'B', 'C']);
+  for (let i = 0; i < 5; i++) {
+    const { retract, travel, grow } = phases.getTransitionBeats(i);
+    assert.equal(phases.getLayoutTravel((retract[0] + retract[1]) / 2).amount, 0);
+    assert.equal(phases.getLayoutTravel((grow[0] + grow[1]) / 2).amount, 0);
+    for (const fraction of [0, 0.25, 0.5, 0.75, 0.99, 0.75, 0.25, 0]) {
+      const p = travel[0] + (travel[1] - travel[0]) * fraction;
+      const value = phases.getLayoutTravel(p);
+      assert.equal(value.from, i);
+      assert.equal(value.to, i + 1);
+      close(value.amount, fraction);
+      assert.equal(phases.getFrameVisible(i, p), false);
+      assert.equal(phases.getFrameVisible(i + 1, p), true);
+    }
+  }
+  for (let step = 0; step <= 10000; step++) {
+    const p = step / 10000;
+    const count = FEATURE_PHASES.filter((_, i) => phases.getFrameVisible(i, p)).length;
+    assert.equal(count, p >= phases.TITLE_FOLD_END && p < OUTRO_START + phases.BEAT ? 1 : 0);
+  }
+  assert.match(css, /@media \(min-width: 768px\)/);
+  for (const layout of ['A', 'B', 'C']) assert.ok(css.includes(`home-intro-layout-${layout}`));
+});
+
+
+test('interaction press feedback eases transforms and stays instant with reduced motion', () => {
+  assert.match(css, /\.home-intro-control\s*\{[^}]*transition: transform 120ms ease-out/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.home-intro-control\s*\{[^}]*transition: none/);
+});
+
+test('Controls delegates scroll state to the deferred subscription hook', async () => {
+  assert.match(art, /const step = useIntroStep\(t\)/);
+  assert.doesNotMatch(art, /useMotionValueEvent|setStep/);
+  const step = await read('../src/components/home/useIntroStep.js');
+  assert.match(step, /useEffect\(\(\) => subscribeIntroStep\(t, setStep\), \[t\]\)/);
+});
+
+test('headline utilities retain the mobile and desktop sizes without CSS overrides', () => {
+  for (const source of [intro, list]) assert.match(source, /text-\[28px\] lg:text-\[40px\]/);
+  for (const [, declarations] of css.matchAll(/[^{}]*\.home-intro-copy h2[^{}]*\{([^{}]*)\}/g)) {
+    assert.doesNotMatch(declarations, /font-size\s*:/);
+  }
+  assert.equal([...css.matchAll(/\.home-intro-travel \.home-intro-copy-slot\s*\{/g)].length, 1);
+});
+
+test('compact art retains the stacked baseline origin outside desktop layout C', () => {
+  assert.doesNotMatch(css, /home-intro-wide[^{}]*\{[^}]*top: 80%/);
+  assert.doesNotMatch(css, /@media \(max-width: 767px\)[\s\S]*?aspect-ratio: 880 \/ 300/);
+  const desktop = css.slice(css.indexOf('@media (min-width: 768px)'));
+  assert.match(desktop, /\.home-intro-layout-C \.home-intro-illustration\s*\{ transform-origin: 50% 80%; \}/);
 });

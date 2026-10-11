@@ -21,20 +21,27 @@
   color: rgba(245,245,242,0.55);
 }
 
-.home-intro-baseline {
+.home-intro-baseline-travel,
+.home-intro-baseline-slot {
   position: absolute;
   top: 45svh;
   left: 1.5rem;
   right: 1.5rem;
   height: 1px;
-  background: #F5F5F2;
-  transform-origin: center;
+  transform-origin: left;
 }
 
-.home-intro-scene {
+.home-intro-baseline { height: 1px; background: #F5F5F2; transform-origin: center; }
+.home-intro-baseline-slot { visibility: hidden; }
+
+.home-intro-scene,
+.home-intro-travel {
   position: absolute;
   inset: 0;
 }
+
+.home-intro-travel { pointer-events: none; }
+.home-intro-travel .home-intro-copy-slot { height: var(--copy-height); }
 
 .home-intro-copy h2 {
   line-height: 1.15;
@@ -47,15 +54,14 @@
   max-width: 28rem;
 }
 
-.home-intro-scene > .home-intro-copy {
+.home-intro-copy-slot {
   position: absolute;
   top: calc(45svh + min(23vw, 8rem));
   left: 1.5rem;
   right: 1.5rem;
 }
 
-/* All artwork has a 520 × 360 viewBox with its axis at y=240. */
-.home-intro-illustration {
+.home-intro-art-slot {
   position: absolute;
   top: 45svh;
   left: 1.5rem;
@@ -64,8 +70,17 @@
   width: min(calc(100% - 3rem), 38rem);
   aspect-ratio: 520 / 360;
   translate: 0 -66.666667%;
-  transform-origin: 50% 66.666667%;
 }
+
+.home-intro-frame {
+  height: 100%;
+  outline: 1px solid rgba(255,255,255,0.10);
+  outline-offset: 10px;
+  transform-origin: top left;
+}
+
+.home-intro-illustration { transform-origin: 50% 66.666667%; perspective: 900px; }
+.home-intro-art-content { position: relative; }
 
 .home-intro-art {
   display: block;
@@ -188,20 +203,6 @@
 @media (min-width: 1024px) {
   .home-intro-title h1 { bottom: 50%; }
   .home-intro-subtitle { top: calc(50% + 2rem); }
-  .home-intro-baseline { top: 50%; left: 7rem; right: 3rem; }
-  .home-intro-scene > .home-intro-copy {
-    top: auto;
-    bottom: calc(50% + 2rem);
-    left: max(7rem, calc((100% - 80rem) / 2));
-    right: 53%;
-  }
-  .home-intro-illustration {
-    top: 50%;
-    left: 54%;
-    right: 3rem;
-    width: auto;
-    max-width: 38rem;
-  }
   .home-intro-list-scene {
     flex-direction: row;
     align-items: center;
@@ -213,4 +214,46 @@
 
 @media (prefers-reduced-motion: reduce) {
   .home-intro-cta::after { animation: none; }
+}
+
+
+@media (min-width: 768px) {
+  .home-intro-baseline-travel,
+  .home-intro-baseline-slot { top: 50%; left: 7rem; right: 3rem; }
+  .home-intro-copy-slot { top: auto; bottom: calc(50% + 2rem); left: 7rem; right: 54%; }
+  .home-intro-art-slot { top: 50%; left: 54%; right: 3rem; width: auto; max-width: 38rem; }
+  .home-intro-layout-A .home-intro-copy-slot { right: 54%; }
+  .home-intro-layout-B .home-intro-copy-slot { left: 56%; right: 3rem; }
+  .home-intro-layout-B .home-intro-art-slot { left: 7rem; right: 52%; }
+  .home-intro-layout-C .home-intro-art-slot {
+    top: 58%; left: 7rem; right: 3rem; max-width: 55rem;
+    aspect-ratio: 880 / 300; translate: 0 -80%;
+  }
+  .home-intro-layout-C .home-intro-baseline-slot { top: 58%; }
+  .home-intro-layout-C .home-intro-copy-slot { top: calc(58% + 5rem); bottom: auto; left: 7rem; right: 3rem; }
+  .home-intro-layout-C .home-intro-copy { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1.5rem; align-items: start; }
+  .home-intro-layout-C .home-intro-travel { pointer-events: none; }
+  .home-intro-layout-C .home-intro-copy p { margin: 0; }
+  .home-intro-layout-C .home-intro-art { width: 100%; }
+  .home-intro-layout-C .home-intro-illustration { transform-origin: 50% 80%; }
+}
+
+
+.home-intro-control {
+  position: absolute;
+  left: var(--x); top: var(--y); width: var(--w); height: var(--h);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+  transition: transform 120ms ease-out;
+}
+.home-intro-control:focus-visible { outline: 2px solid #F5F5F2; outline-offset: 3px; }
+.home-intro-control:active { transform: scale(0.97); }
+.home-intro-control[aria-pressed="true"],
+.home-intro-control[aria-expanded="true"] { border-color: rgba(245,245,242,0.55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-intro-control { transition: none; }
 }
