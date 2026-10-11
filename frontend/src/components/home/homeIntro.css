@@ -1,0 +1,55 @@
+.home-intro-stage {
+  height: 100vh;
+  height: 100svh;
+}
+
+.home-intro-scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 5rem 1.5rem 8rem;
+}
+
+.home-intro-art {
+  width: min(100%, 38rem);
+  max-height: 48svh;
+  overflow: visible;
+}
+
+.home-intro-copy {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  fill: rgb(255 255 255 / 0.4);
+}
+
+.home-intro-tile {
+  position: relative;
+  aspect-ratio: 1.45;
+  transform-style: preserve-3d;
+}
+
+.home-intro-tile > span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 0.05);
+  backface-visibility: hidden;
+}
+
+.home-intro-tile > span:last-child {
+  transform: rotateY(180deg);
+}
+
+@media (min-width: 768px) {
+  .home-intro-scene {
+    padding-left: 15rem;
+    padding-right: 3rem;
+  }
+}
+

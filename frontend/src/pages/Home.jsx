@@ -1,9 +1,13 @@
+import { useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp, LineChart, Brain, Wallet, Search, User, BarChart3 } from 'lucide-react';
 import { motion } from 'motion/react';
+import HomeScrollIntro from '../components/home/HomeScrollIntro';
+import { getReducedMotion, getServerReducedMotion, subscribeReducedMotion } from '../components/home/reducedMotion';
 
 function Home() {
   const navigate = useNavigate();
+  const reduceMotion = useSyncExternalStore(subscribeReducedMotion, getReducedMotion, getServerReducedMotion);
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden text-white">
@@ -41,34 +45,25 @@ function Home() {
       </div>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center px-8 pt-20">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1 }}
-          className="text-center"
-        >
-          <h1 className="text-9xl font-light tracking-tight text-white mb-6">
-            ATLAS
-          </h1>
-          <p className="text-sm tracking-[0.3em] text-white/40 mb-4 uppercase">
-            AI Trading, Learning & Stock Analysis
-          </p>
-          <p className="text-base text-white/60 max-w-2xl mx-auto leading-relaxed">
-            Advanced algorithmic trading platform powered by machine learning.
-            Real-time market analysis, portfolio optimization, and intelligent stock recommendations.
-          </p>
-        </motion.div>
-
-        {/* Scroll Indicator */}
-        <motion.div
-          className="absolute bottom-12"
-          animate={{ y: [0, 10, 0] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          <div className="w-px h-16 bg-gradient-to-b from-white/20 to-transparent"></div>
-        </motion.div>
-      </section>
+      {reduceMotion !== false ? (
+        <section className="relative min-h-screen flex flex-col items-center justify-center px-8 pt-20">
+          <div className="text-center">
+            <h1 className="text-6xl sm:text-8xl md:text-9xl font-light tracking-tight text-white mb-6">
+              ATLAS
+            </h1>
+            <p className="text-sm tracking-[0.3em] text-white/40 mb-4 uppercase">
+              AI Trading, Learning & Stock Analysis
+            </p>
+            <p className="text-base text-white/60 max-w-2xl mx-auto leading-relaxed">
+              Advanced algorithmic trading platform powered by machine learning.
+              Real-time market analysis, portfolio optimization, and intelligent stock recommendations.
+            </p>
+          </div>
+          <div className="absolute bottom-12">
+            <div className="w-px h-16 bg-gradient-to-b from-white/20 to-transparent"></div>
+          </div>
+        </section>
+      ) : <HomeScrollIntro />}
 
       {/* Features Grid */}
       <section className="relative max-w-7xl mx-auto px-8 py-32">
