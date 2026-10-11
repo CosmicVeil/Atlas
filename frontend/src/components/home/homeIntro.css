@@ -1,0 +1,269 @@
+.home-intro-stage {
+  height: 100vh;
+  height: 100svh;
+  color: #F5F5F2;
+}
+
+.home-intro-title h1 {
+  position: absolute;
+  bottom: 55svh;
+  left: 0;
+  right: 0;
+  line-height: 0.75;
+  perspective: 700px;
+}
+
+.home-intro-subtitle {
+  position: absolute;
+  top: calc(45svh + 2rem);
+  left: 1.5rem;
+  right: 1.5rem;
+  color: rgba(245,245,242,0.55);
+}
+
+.home-intro-baseline-travel,
+.home-intro-baseline-slot {
+  position: absolute;
+  top: 45svh;
+  left: 1.5rem;
+  right: 1.5rem;
+  height: 1px;
+  transform-origin: left;
+}
+
+.home-intro-baseline { height: 1px; background: #F5F5F2; transform-origin: center; }
+.home-intro-baseline-slot { visibility: hidden; }
+
+.home-intro-scene {
+  position: absolute;
+  inset: 0;
+}
+
+/* Persistent box outlines: four 1px lines per box, moved and lengthened with transforms. */
+.home-intro-frames {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.home-intro-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  background: rgba(255,255,255,0.10);
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.home-intro-copy h2 {
+  line-height: 1.15;
+  margin-bottom: 1rem;
+}
+
+.home-intro-copy p {
+  color: rgba(245,245,242,0.55);
+  margin-bottom: 1.75rem;
+  max-width: 28rem;
+}
+
+.home-intro-copy-slot {
+  position: absolute;
+  top: calc(45svh + min(23vw, 8rem));
+  left: 1.5rem;
+  right: 1.5rem;
+}
+
+.home-intro-art-slot {
+  position: absolute;
+  top: 45svh;
+  left: 1.5rem;
+  right: 1.5rem;
+  margin: auto;
+  width: min(calc(100% - 3rem), 38rem);
+  aspect-ratio: 520 / 360;
+  translate: 0 -66.666667%;
+}
+
+.home-intro-frame {
+  height: 100%;
+}
+
+.home-intro-illustration { transform-origin: 50% 66.666667%; perspective: 900px; }
+.home-intro-art-content { position: relative; }
+
+.home-intro-art {
+  display: block;
+  width: min(100%, 38rem);
+  overflow: visible;
+}
+
+.home-intro-svg-muted {
+  fill: rgba(245,245,242,0.55);
+}
+
+.home-intro-cta {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.75rem 1.4rem;
+  border: 1px solid rgba(159,183,255,0.7);
+  border-radius: 999px;
+  color: #F5F5F2;
+  background: #000000;
+  box-shadow: 0 0 22px rgba(159,183,255,0.12);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.home-intro-cta::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 1px solid #9FB7FF;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.home-intro-cta.is-active::after {
+  animation: home-intro-sonar 1.6s ease-out infinite;
+}
+
+@keyframes home-intro-sonar {
+  from { transform: scale(1); opacity: 0.6; }
+  to { transform: scale(1.18, 1.6); opacity: 0; }
+}
+
+.home-intro-cta:hover,
+.home-intro-cta:focus-visible {
+  border-color: #9FB7FF;
+}
+
+.home-intro-cta:focus-visible {
+  outline: 2px solid #9FB7FF;
+  outline-offset: 5px;
+}
+
+.home-intro-cta:hover::after,
+.home-intro-cta:focus-visible::after {
+  animation-play-state: paused;
+}
+
+.home-intro-cta--static::after {
+  animation: none;
+  transform: scale(1.06, 1.2);
+  opacity: 0.3;
+}
+
+.home-intro-rail {
+  position: absolute;
+  left: 1.5rem;
+  top: 50%;
+  translate: 0 -50%;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home-intro-rail button {
+  color: rgba(245,245,242,0.55);
+  padding: 0.75rem;
+  cursor: pointer;
+}
+
+.home-intro-rail button[aria-current],
+.home-intro-rail button:hover {
+  color: #F5F5F2;
+}
+
+.home-intro-rail button:focus-visible {
+  outline: 1px solid #F5F5F2;
+  outline-offset: 2px;
+}
+
+.home-intro-list {
+  color: #F5F5F2;
+}
+
+.home-intro-list-scene {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2rem;
+  max-width: 80rem;
+  margin: auto;
+  padding: 3rem 1.5rem;
+}
+
+.home-intro-list-art {
+  position: relative;
+  width: min(100%, 38rem);
+  margin: auto;
+}
+
+.home-intro-list-baseline {
+  position: absolute;
+  top: 66.666667%;
+  width: 100%;
+  height: 1px;
+  background: #F5F5F2;
+}
+
+@media (min-width: 1024px) {
+  .home-intro-title h1 { bottom: 50%; }
+  .home-intro-subtitle { top: calc(50% + 2rem); }
+  .home-intro-list-scene {
+    flex-direction: row;
+    align-items: center;
+    gap: 4rem;
+    padding: 5rem 3rem;
+  }
+  .home-intro-list-scene > * { flex: 1; min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-intro-cta::after { animation: none; }
+}
+
+
+@media (min-width: 768px) {
+  .home-intro-baseline-travel,
+  .home-intro-baseline-slot { top: 50%; left: 7rem; right: 3rem; }
+  .home-intro-copy-slot { top: auto; bottom: calc(50% + 2rem); left: 7rem; right: 54%; }
+  .home-intro-art-slot { top: 50%; left: 54%; right: 3rem; width: auto; max-width: 38rem; }
+  .home-intro-layout-A .home-intro-copy-slot { right: 54%; }
+  .home-intro-layout-B .home-intro-copy-slot { left: 56%; right: 3rem; }
+  .home-intro-layout-B .home-intro-art-slot { left: 7rem; right: 52%; }
+  .home-intro-layout-C .home-intro-art-slot {
+    top: 58%; left: 7rem; right: 3rem; max-width: 55rem;
+    aspect-ratio: 880 / 300; translate: 0 -80%;
+  }
+  .home-intro-layout-C .home-intro-baseline-slot { top: 58%; }
+  .home-intro-layout-C .home-intro-copy-slot { top: calc(58% + 7rem); bottom: auto; left: 7rem; right: 3rem; }
+  .home-intro-layout-C .home-intro-copy { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1.5rem; align-items: start; padding-right: 1.5rem; }
+  .home-intro-layout-C .home-intro-copy p { margin: 0; }
+  .home-intro-layout-C .home-intro-art { width: 100%; }
+  .home-intro-layout-C .home-intro-illustration { transform-origin: 50% 80%; }
+}
+
+
+.home-intro-control {
+  position: absolute;
+  left: var(--x); top: var(--y); width: var(--w); height: var(--h);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+  transition: transform 120ms ease-out;
+}
+.home-intro-control:focus-visible { outline: 2px solid #F5F5F2; outline-offset: 3px; }
+.home-intro-control:active { transform: scale(0.97); }
+.home-intro-control[aria-pressed="true"],
+.home-intro-control[aria-expanded="true"] { border-color: rgba(245,245,242,0.55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-intro-control { transition: none; }
+}
