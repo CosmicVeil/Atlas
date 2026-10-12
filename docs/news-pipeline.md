@@ -1,12 +1,16 @@
-# Market News and Warning Pipeline
+# Market News, Warnings and Predictions Pipeline
 
-The news pipeline turns daily market news into the warning cards on the Market News and Portfolio pages. It runs in Docker:
+## **The three stages**
 
-- **news-streamer** fetches articles from NewsData, enriches them, and sends them to the `atlas.market.news` Redpanda topic. It runs as soon as the container starts, then every 86,400 seconds (24 hours).
-- **warning-streamer** reads each article from the topic, sends it to the NVIDIA model named in `NVIDIA_MODEL`, and stores accepted positive or negative warnings in MongoDB.
-- **redpanda** is the Kafka-compatible message broker, and **mongo** stores the warnings.
+**news-streamer → warning-streamer → prediction-streamer**
 
-The Flask backend reads the warnings from MongoDB and serves them to the frontend.
+| Stage | Service | Reads | Does | Writes |
+|---|---|---|---|---|
+| 1 | **news-streamer** | NewsData API | Fetches and enriches market articles at startup, then every 24 hours | Kafka topic `atlas.market.news` |
+| 2 | **warning-streamer** | Kafka topic `atlas.market.news` | AI analyzes articles into accepted per-ticker warnings | MongoDB `market_warnings` and Kafka topic `atlas.market.warnings` |
+| 3 | **prediction-streamer** | Kafka topic `atlas.market.warnings`, recent accepted warnings, CSV fundamentals and a live quote when available | AI updates the ticker's outlook and target price; code calculates potential return | MongoDB `stock_predictions`, one document per symbol |
+
+Redpanda supplies the Kafka topics; MongoDB stores warnings and predictions. Flask reads both collections. News predictions override model or simulated values on the AI Analysis page and its top-1000, refresh and analyze APIs. A failed model response never writes a simulated prediction to MongoDB.
 
 ## Setup
 
@@ -34,16 +38,16 @@ Don't use `mongodb://mongo:27017` here. The `mongo` hostname only resolves insid
 
 ## Start
 
-Start MongoDB, Redpanda, the daily news producer, and the warning consumer:
+Start MongoDB, Redpanda, the daily news producer, the warning consumer, and the prediction consumer:
 
 ```bash
 docker compose --profile docker-news -f docker-compose.news.yml up --build -d
 ```
 
-Follow both streamers:
+Follow all three streamers:
 
 ```bash
-docker compose --profile docker-news -f docker-compose.news.yml logs -f news-streamer warning-streamer
+docker compose --profile docker-news -f docker-compose.news.yml logs -f news-streamer warning-streamer prediction-streamer
 ```
 
 These messages confirm that the pipeline processed an article:
@@ -51,6 +55,8 @@ These messages confirm that the pipeline processed an article:
 ```text
 [news-streamer] Delivered to atlas.market.news
 [warning-streamer] Saved ... warning(s) from event ...
+[warning-streamer] Published ... warning(s) to atlas.market.warnings
+[prediction-streamer] Saved prediction for ...
 ```
 
 ## Development
@@ -58,7 +64,7 @@ These messages confirm that the pipeline processed an article:
 Run one news collection cycle without waiting for the daily schedule:
 
 ```bash
-docker compose --profile docker-news -f docker-compose.news.yml up --build -d warning-streamer
+docker compose --profile docker-news -f docker-compose.news.yml up --build -d warning-streamer prediction-streamer
 docker compose --profile docker-news -f docker-compose.news.yml run --build --rm -e NEWS_STREAM_MODE=once news-streamer
 ```
 
@@ -83,20 +89,20 @@ unsupported, and skipped as already seen. To reset only this memory, drop the
 Rebuild the containers after changing Python code, the model, or Docker configuration:
 
 ```bash
-docker compose --profile docker-news -f docker-compose.news.yml up --build -d --force-recreate
+docker compose --profile docker-news -f docker-compose.news.yml up --build -d --force-recreate news-streamer warning-streamer prediction-streamer
 ```
 
-Docker reads `backend/.env` only when it creates a container. After changing `.env` (for example a new API key), recreate the long-running producer so it picks up the change:
+Docker reads `backend/.env` only when it creates a container. After changing `.env` (for example a new API key), recreate all three streamers so they pick up the change:
 
 ```bash
-docker compose --profile docker-news -f docker-compose.news.yml up -d --force-recreate news-streamer
+docker compose --profile docker-news -f docker-compose.news.yml up -d --force-recreate news-streamer warning-streamer prediction-streamer
 ```
 
 Restart `wsgi.py` as well when you change `.env`.
 
 ## Clear Old Data
 
-The website reads warnings from MongoDB. The Redpanda topic only holds raw articles waiting for the warning streamer, which has already read past old messages, so clearing the topic does not change the website. These commands permanently delete data.
+The website reads warnings and predictions from MongoDB. The two Redpanda topics carry articles and accepted warnings between stages; clearing topics does not delete saved MongoDB results. These commands permanently delete data.
 
 Delete warnings saved before a date, keeping newer ones:
 
@@ -104,19 +110,28 @@ Delete warnings saved before a date, keeping newer ones:
 docker exec atlas-mongo-1 mongosh --quiet atlas --eval 'db.market_warnings.deleteMany({created_at: {$lt: ISODate("2026-10-01")}})'
 ```
 
-Delete every warning:
+Delete every warning and prediction:
 
 ```bash
 docker exec atlas-mongo-1 mongosh --quiet atlas --eval 'db.market_warnings.deleteMany({})'
+docker exec atlas-mongo-1 mongosh --quiet atlas --eval 'db.stock_predictions.deleteMany({})'
 ```
 
-Empty the article topic, then restart the warning streamer so it reads the new topic cleanly:
+Empty both topics, then restart the warning and prediction streamers so they read the new topics cleanly:
 
 ```bash
 docker exec atlas-redpanda-1 rpk topic delete atlas.market.news
 docker exec atlas-redpanda-1 rpk topic create atlas.market.news --partitions 1 --replicas 1
-docker compose --profile docker-news -f docker-compose.news.yml restart warning-streamer
+docker exec atlas-redpanda-1 rpk topic delete atlas.market.warnings
+docker exec atlas-redpanda-1 rpk topic create atlas.market.warnings --partitions 1 --replicas 1
+docker compose --profile docker-news -f docker-compose.news.yml restart warning-streamer prediction-streamer
 ```
+
+## New prediction banner
+
+The AI Analysis page and Portfolio AI analysis poll every 30 seconds while visible and logged in. New predictions show **“New prediction came in. Reload?”**, with tickers when there are three or fewer. Reload refetches analysis in place; Dismiss hides the banner until a newer prediction arrives. Failed polls are silent, and polling stops on logout or leaving the page.
+
+The portfolio banner appears in the AI analysis modal or beside its AI Analysis button after the modal closes, and only reports tickers held in the selected portfolio. It reloads the existing portfolio recommendation feature; holdings are not sent to the prediction streamer. AI stock cards using stage-3 predictions display a **News** badge.
 
 ## Stop
 

@@ -2,12 +2,14 @@ import { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPortfolios, createPortfolio, updatePortfolio, deletePortfolio } from '../api/portfolio';
 import { getHoldings as getHoldingsApi, addHolding as addHoldingApi, deleteHolding as deleteHoldingApi } from '../api/holdings';
-import { getPortfolioRecommendations } from '../api/ai';
+import { getPortfolioRecommendations, getPredictionsForSymbols } from '../api/ai';
 import { getPortfolioWarnings } from '../api/news';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search, Loader2, AlertTriangle, Sparkles, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
+import PredictionBanner from '../components/PredictionBanner.jsx';
+import usePredictionBanner from '../components/usePredictionBanner';
 
 // Mock holdings helper to pre-populate list on first view of default portfolios
 const INITIAL_MOCK_HOLDINGS = {
@@ -79,6 +81,11 @@ function Portfolio() {
   // AI Recommendations
   const [aiRecs, setAiRecs] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [newsPredictions, setNewsPredictions] = useState([]);
+  const predictionBanner = usePredictionBanner({
+    token, enabled: !!aiRecs && !!selectedPortfolio,
+    tickers: holdings.map(holding => holding.ticker),
+  });
 
   // Modals / forms states
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
@@ -193,15 +200,27 @@ function Portfolio() {
     if (!selectedPortfolio) return;
     setAiLoading(true);
     try {
-      const data = await getPortfolioRecommendations(token, selectedPortfolio.id);
+      const baseline = await predictionBanner.captureBaseline();
+      const tickers = [...new Set(holdings.map(holding => holding.ticker))];
+      const [data, predictionData] = await Promise.all([
+        getPortfolioRecommendations(token, selectedPortfolio.id),
+        tickers.length ? getPredictionsForSymbols(token, tickers).catch(() => null) : null,
+      ]);
+      setNewsPredictions(predictionData?.predictions || []);
       if (data && !data.error) {
         setAiRecs(data);
+        void predictionBanner.setBaseline([], baseline);
       }
     } catch (e) {
       console.error("Error loading AI recommendations:", e);
     } finally {
       setAiLoading(false);
     }
+  }
+
+  async function handleReloadPredictions() {
+    predictionBanner.startReload();
+    await fetchAIAnalysis();
   }
 
   // Create new portfolio
@@ -547,6 +566,12 @@ function Portfolio() {
             </div>
           </div>
 
+          {!showAIAnalysis && predictionBanner.visible && (
+            <div className="mb-12">
+              <PredictionBanner symbols={predictionBanner.symbols} onReload={handleReloadPredictions} onDismiss={predictionBanner.dismiss} reloading={aiLoading} />
+            </div>
+          )}
+
           {/* Portfolio Stats */}
           <div className="grid grid-cols-3 gap-px bg-white/5 mb-12">
             <div className="bg-black border border-white/5 p-8">
@@ -784,6 +809,11 @@ function Portfolio() {
                 <h2 className="text-2xl text-white tracking-wide font-light">AI Portfolio Analysis</h2>
               </div>
               
+              {predictionBanner.visible && (
+                <div className="mb-6">
+                  <PredictionBanner symbols={predictionBanner.symbols} onReload={handleReloadPredictions} onDismiss={predictionBanner.dismiss} reloading={aiLoading} />
+                </div>
+              )}
               {aiLoading ? (
                 <div className="flex flex-col items-center justify-center py-12 space-y-4 bg-black">
                   <Loader2 className="w-8 h-8 animate-spin text-white" />
@@ -834,6 +864,37 @@ function Portfolio() {
                       )}
                     </div>
                   </div>
+                  {newsPredictions.length > 0 && (
+                    <div className="border border-white/5 p-6 bg-black">
+                      <h3 className="text-sm text-white/40 tracking-wider uppercase mb-3">Latest News Predictions</h3>
+                      <div className="space-y-4">
+                        {newsPredictions.map(prediction => (
+                          <div key={prediction.ticker} className="border-b border-white/5 pb-3 last:border-0 last:pb-0">
+                            <div className="flex justify-between items-start mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-white">{prediction.ticker}</span>
+                                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 border bg-sky-500/10 text-sky-400 border-sky-500/20">NEWS</span>
+                                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 border ${
+                                  prediction.recommendation?.includes('buy') ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                  prediction.recommendation?.includes('sell') ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                  'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                }`}>
+                                  {prediction.recommendation?.replace('_', ' ')}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-white/40 block">Potential Return</span>
+                                <span className={`text-xs ${prediction.potentialReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {prediction.potentialReturn >= 0 ? '+' : ''}{Number(prediction.potentialReturn || 0).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-white/60 leading-relaxed">{prediction.summary}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-6 text-white/40">No recommendations available.</div>
