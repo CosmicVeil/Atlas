@@ -41,7 +41,7 @@ class PredictionTests(unittest.TestCase):
         self.recent.return_value = [dict(self.warning, warning_key='w0', headline='Prior contract')]
         self.assertTrue(self.streamer.process_warning(self.warning))
         system, prompt = self.model.call_args.args
-        for value in ['Apple', 'Technology', '25', '120', 'New contract', 'Prior contract', 'positive', '82', 'Revenue increases', 'near-term']:
+        for value in ['Apple', 'Technology', '30.0', '120', 'New contract', 'Prior contract', 'positive', '82', 'Revenue increases', 'near-term']:
             self.assertIn(value, prompt)
         self.assertIn('news', (system + prompt).lower())
         self.assertNotIn('portfolio', (system + prompt).lower())
@@ -58,6 +58,36 @@ class PredictionTests(unittest.TestCase):
         fields = self.collection.update_one.call_args.args[1]['$set']
         self.assertEqual(fields['price'], 100)
         self.assertEqual(fields['potentialReturn'], 50)
+
+    def test_live_quote_overrides_52_week_range_and_pe(self):
+        self.quote.return_value = {'price': 120, 'week_52_high': 130.5, 'week_52_low': 90.25}
+        self.assertTrue(self.streamer.process_warning(self.warning))
+        _, prompt = self.model.call_args.args
+        fundamentals = json.loads(prompt.split('Stock fundamentals: ', 1)[1].split('\n', 1)[0])
+        self.assertEqual(fundamentals['week_52_high'], 130.5)
+        self.assertEqual(fundamentals['week_52_low'], 90.25)
+        self.assertEqual(fundamentals['pe_ratio'], 30.0)
+        self.assertEqual(fundamentals['price'], 120)
+
+    def test_prompt_has_no_placeholder_target_and_names_live_price(self):
+        self.assertTrue(self.streamer.process_warning(self.warning))
+        _, prompt = self.model.call_args.args
+        self.assertNotIn('100.0', prompt)
+        self.assertIn('$120', prompt)
+
+    def test_rejects_target_that_contradicts_recommendation(self):
+        cases = [('buy', 100), ('strong_buy', 120), ('sell', 150), ('strong_sell', 120), ('hold', 0), ('buy', None)]
+        for recommendation, target in cases:
+            with self.subTest(recommendation=recommendation, target=target), patch('builtins.print'):
+                self.model.return_value = json.dumps({'recommendation': recommendation, 'targetPrice': target})
+                self.assertFalse(self.streamer.process_warning(self.warning))
+        self.collection.update_one.assert_not_called()
+
+    def test_accepts_consistent_targets(self):
+        for recommendation, target in [('buy', 150), ('sell', 90), ('hold', 100)]:
+            with self.subTest(recommendation=recommendation):
+                self.model.return_value = json.dumps({'recommendation': recommendation, 'targetPrice': target})
+                self.assertTrue(self.streamer.process_warning(self.warning))
 
     def test_upserts_same_symbol_preserving_creation_time(self):
         for _ in range(2):

@@ -21,13 +21,13 @@ npm run dev
 
 ### 3. Run the Market News Pipeline
 
-The Market News and portfolio warning cards come from a Docker pipeline: a daily NewsData producer, an NVIDIA warning consumer, Redpanda, and MongoDB. With Docker Desktop running and your API keys in `backend/.env`:
+The Market News warning cards and the news-driven stock predictions come from a three-stage Docker pipeline: **news-streamer** fetches articles, **warning-streamer** turns them into warnings, and **prediction-streamer** turns warnings into stock predictions. Redpanda carries messages between stages and MongoDB stores the results. With Docker Desktop running and your API keys in `backend/.env`:
 
 ```bash
 docker compose --profile docker-news -f docker-compose.news.yml up --build -d
 ```
 
-See [docs/news-pipeline.md](docs/news-pipeline.md) for setup, logs, one-off runs, rebuilding, and stopping.
+See [docs/news-pipeline.md](docs/news-pipeline.md) for setup, logs, one-off runs, clearing old data, rebuilding, and stopping.
 
 ## Testing
 

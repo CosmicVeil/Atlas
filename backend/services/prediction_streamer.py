@@ -37,9 +37,40 @@ def load_stock_info(symbol):
     return None
 
 
-def current_price(symbol, info):
+def _positive_float(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def live_stock_info(symbol, info):
+    """Overlay live Yahoo values on the CSV row: price, 52-week range, and P/E at the live price."""
+    live = dict(info)
     quote = market_data.get_quote(symbol)
-    return quote['price'] if quote else info.get('price', 0)
+    if not quote:
+        return live
+    live['price'] = quote['price']
+    for field in ('week_52_high', 'week_52_low'):
+        if _positive_float(quote.get(field)):
+            live[field] = quote[field]
+    price, eps = _positive_float(live['price']), _positive_float(live.get('eps'))
+    if price and eps:
+        live['pe_ratio'] = round(price / eps, 2)
+    return live
+
+
+def target_matches_recommendation(prediction, price):
+    """A buy needs a target above the price and a sell one below it; hold accepts any positive target."""
+    target, price = _positive_float(prediction.get('targetPrice')), _positive_float(price)
+    if not target or not price:
+        return False
+    if prediction['recommendation'] in ('buy', 'strong_buy'):
+        return target > price
+    if prediction['recommendation'] in ('sell', 'strong_sell'):
+        return target < price
+    return True
 
 
 def load_recent_warnings(symbol):
@@ -64,11 +95,14 @@ def build_prediction_prompt(stock_info, price, warnings):
     user = f'''Stock fundamentals: {json.dumps(fundamentals)}
 Recent accepted news warnings (most recent first): {json.dumps(news)}
 Return this exact JSON shape:
-{{"recommendation": "buy", "prediction": "bullish", "confidence": 80,
-"targetPrice": 100.0, "summary": "Explain how the news changes the outlook.",
+{{"recommendation": "strong_buy" | "buy" | "hold" | "sell" | "strong_sell",
+"prediction": "bullish" | "bearish" | "neutral", "confidence": <integer 0-100>,
+"targetPrice": <number>, "summary": "Explain how the news changes the outlook.",
 "pros": ["Strength"], "cons": ["Weakness"], "riskFactors": ["Risk"]}}
-Use prediction bullish, bearish or neutral; confidence is an integer from 0 to 100.
-The targetPrice is a 12-month projection. The summary must explain how the news changes the outlook.
+The current price is ${price}. targetPrice is your 12-month price projection in dollars for this stock,
+based on the current price; do not copy any placeholder number.
+A buy or strong_buy needs a targetPrice above ${price}; a sell or strong_sell needs one below it.
+The summary must explain how the news changes the outlook.
 '''
     return system, user
 
@@ -97,13 +131,18 @@ def process_warning(warning):
     info = load_stock_info(symbol)
     if info is None:
         return False
-    price = current_price(symbol, info)
+    info = live_stock_info(symbol, info)
+    price = info.get('price', 0)
     warnings = load_recent_warnings(symbol)
     if not key or not any(item.get('warning_key') == key for item in warnings):
         warnings = [warning, *warnings][:RECENT_WARNING_LIMIT]
     prediction = parse_prediction(ai_service._call_multiple_models(*build_prediction_prompt(info, price, warnings)))
     if prediction is None:
         print(f'[prediction-streamer] Invalid or empty model prediction for {symbol}; skipping')
+        return False
+    if not target_matches_recommendation(prediction, price):
+        print(f'[prediction-streamer] Target {prediction.get("targetPrice")} contradicts '
+              f'{prediction["recommendation"]} at price {price} for {symbol}; skipping')
         return False
     doc = {field: prediction.get(field) for field in (
         'recommendation', 'prediction', 'confidence', 'targetPrice', 'summary', 'pros', 'cons', 'riskFactors')}
