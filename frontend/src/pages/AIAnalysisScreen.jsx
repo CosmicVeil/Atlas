@@ -14,8 +14,12 @@ import { getPortfolios } from "../api/portfolio";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 
+import PredictionBanner from '../components/PredictionBanner.jsx';
+import usePredictionBanner from '../components/usePredictionBanner';
+
 function AIAnalysisScreen() {
   const { token } = useAuth();
+  const predictionBanner = usePredictionBanner({ token, enabled: !!token });
   const [searchParams] = useSearchParams();
   const lastAutoSearchTicker = useRef("");
   const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
@@ -114,10 +118,12 @@ function AIAnalysisScreen() {
   async function loadTop1000() {
     setIsLoading(true);
     try {
+      const baseline = await predictionBanner.captureBaseline();
       const data = await getTop1000Analysis(token);
       if (data && !data.error) {
         setRecommendedStocks(data.recommended || []);
         setWorstStocks(data.worst || []);
+        void predictionBanner.setBaseline([...(data.recommended || []), ...(data.worst || [])], baseline);
         if (data.lastUpdated) {
           const date = new Date(data.lastUpdated);
           setLastUpdated(date.toLocaleString("en-US", {
@@ -136,13 +142,21 @@ function AIAnalysisScreen() {
     }
   }
 
+  async function handleReloadPredictions() {
+    predictionBanner.startReload();
+    await loadTop1000();
+    if (searchResult) await handleSearchAnalyze(null, searchResult.ticker);
+  }
+
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
+      const baseline = await predictionBanner.captureBaseline();
       const data = await refreshTop1000(token);
       if (data && !data.error) {
         setRecommendedStocks(data.recommended || []);
         setWorstStocks(data.worst || []);
+        void predictionBanner.setBaseline([...(data.recommended || []), ...(data.worst || [])], baseline);
         if (data.lastUpdated) {
           const date = new Date(data.lastUpdated);
           setLastUpdated(date.toLocaleString("en-US", {
@@ -237,6 +251,7 @@ function AIAnalysisScreen() {
               <CardTitle>{stock.ticker}</CardTitle>
               {getRecommendationBadge(stock.recommendation)}
               {getRiskBadge(stock.riskLevel)}
+              {stock.source === 'news' && <Badge className="bg-sky-500/20 text-sky-400 border-sky-500/30 border">NEWS</Badge>}
             </div>
             <CardDescription>{stock.name}</CardDescription>
           </div>
@@ -331,6 +346,10 @@ function AIAnalysisScreen() {
           </p>
         </div>
 
+
+        {predictionBanner.visible && (
+          <PredictionBanner symbols={predictionBanner.symbols} onReload={handleReloadPredictions} onDismiss={predictionBanner.dismiss} reloading={isLoading || searchLoading} />
+        )}
 
         {/* Tabs */}
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
@@ -641,6 +660,7 @@ function AIAnalysisScreen() {
                                     {result.prediction}
                                   </span>
                                 </div>
+                                {result.source === 'news' && <Badge className="bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-none text-[10px] py-1 font-bold">NEWS</Badge>}
                                 {result.isSimulated && (
                                   <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 rounded-none text-[10px] py-1 font-bold">
                                     ⚠️ SIMULATED (NO API KEY)

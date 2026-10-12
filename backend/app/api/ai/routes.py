@@ -4,13 +4,13 @@ import os
 import json
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from app.extensions import db
 from app.models.portfolio import Portfolio
 from app.models.holding import Holding
 from app.models.Stock import Stock
 from services import market_data
-from services import ai_service
+from services import ai_service, prediction_store
 import pathlib
 
 ai_bp = Blueprint('ai', __name__)
@@ -85,6 +85,19 @@ def analyze():
         if quote:
             stock_info.update(quote)
 
+    prediction = prediction_store.get_prediction(symbol)
+    if prediction:
+        analysis = {key: prediction.get(key) for key in (
+            'prediction', 'recommendation', 'confidence', 'targetPrice',
+            'summary', 'pros', 'cons', 'riskFactors')}
+        analysis.update({
+            'ticker': symbol, 'companyName': stock_info.get('name', symbol),
+            'currentPrice': stock_info.get('price'), 'isSimulated': False,
+            'potentialReturn': ai_service.calc_potential_return(prediction.get('targetPrice'), stock_info.get('price')),
+            'source': 'news', 'predictionUpdatedAt': prediction_store.serialize_time(prediction.get('updated_at')),
+        })
+        return jsonify(analysis), 200
+
     # 2. Get portfolio personalization context if provided
     portfolio_context = None
     if portfolio_id:
@@ -92,6 +105,7 @@ def analyze():
 
     # 3. Analyze stock
     analysis = ai_service.analyze_stock(stock_info, portfolio_context)
+    analysis['source'] = 'simulated' if analysis.get('isSimulated') else 'model'
     return jsonify(analysis), 200
 
 
@@ -172,6 +186,54 @@ def _update_with_live_quotes(cached_data):
         list(executor.map(get_and_update, all_stocks))
 
 
+@ai_bp.route('/predictions/latest', methods=['GET'])
+@jwt_required()
+def latest_predictions():
+    since_text = request.args.get('since')
+    since = None
+    if since_text is not None:
+        try:
+            since = datetime.fromisoformat(since_text.replace('Z', '+00:00'))
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return jsonify({'error': 'Invalid since timestamp'}), 400
+    latest = prediction_store.get_latest_prediction_time()
+    result = {'latestUpdatedAt': prediction_store.serialize_time(latest)}
+    if since is not None:
+        symbols = prediction_store.get_prediction_symbols_since(since) if latest else []
+        result.update(count=len(symbols), symbols=symbols)
+    return jsonify(result), 200
+
+
+@ai_bp.route('/predictions', methods=['GET'])
+@jwt_required()
+def predictions_for_symbols():
+    """News-driven predictions for the given tickers (?symbols=AAPL,MSFT). Market-wide, not personalised."""
+    symbols = [s.strip().upper() for s in request.args.get('symbols', '').split(',') if s.strip()][:50]
+    if not symbols:
+        return jsonify({'predictions': []}), 200
+    predictions = prediction_store.get_predictions_by_symbol(symbols)
+    result = []
+    for symbol in symbols:
+        doc = predictions.get(symbol)
+        if not doc:
+            continue
+        result.append({
+            'ticker': symbol,
+            'name': doc.get('name', symbol),
+            'recommendation': doc.get('recommendation', 'hold'),
+            'confidence': doc.get('confidence'),
+            'price': doc.get('price'),
+            'targetPrice': doc.get('targetPrice'),
+            'potentialReturn': doc.get('potentialReturn', 0.0),
+            'summary': doc.get('summary', ''),
+            'source': 'news',
+            'predictionUpdatedAt': prediction_store.serialize_time(doc.get('updated_at')),
+        })
+    return jsonify({'predictions': result}), 200
+
+
 @ai_bp.route('/top-1000', methods=['GET'])
 @jwt_required()
 def get_top_1000():
@@ -199,6 +261,19 @@ def get_top_1000():
         except Exception as e:
             print(f"Error reading top 1000 AI cache: {e}")
             needs_rebuild = True
+
+    latest_prediction = prediction_store.get_latest_prediction_time()
+    if cached_data:
+        try:
+            cached_time = datetime.fromisoformat(cached_data.get('lastUpdated', '')).astimezone()
+        except (ValueError, TypeError):
+            cached_time = None
+        cached_entries = cached_data.get('recommended', []) + cached_data.get('worst', [])
+        cached_news = any(item.get('source') == 'news' for item in cached_entries)
+        missing_source = any('source' not in item for item in cached_entries)
+        if missing_source or (latest_prediction and (cached_time is None or latest_prediction > cached_time)) or (cached_news and latest_prediction is None):
+            cached_data = _generate_and_cache_top_1000()
+            needs_rebuild = False
 
     if not cached_data:
         # No cache exists at all; generate it synchronously
@@ -248,6 +323,10 @@ def _generate_and_cache_top_1000():
     recommended = []
     worst = []
 
+    # Timestamp the snapshot before reading it so arrivals during the rebuild
+    # remain newer than the cache and trigger the next request's rebuild.
+    snapshot_started_at = datetime.now()
+    predictions = prediction_store.get_predictions_by_symbol()
     stocks = Stock.query.all()
     all_stocks_data = []
 
@@ -255,14 +334,25 @@ def _generate_and_cache_top_1000():
         try:
             ticker = stock.symbol
             # Use database AI analysis if it exists, otherwise check existing cache, otherwise fall back to fast local simulation
-            if stock.ai_recommendation:
+            prediction = predictions.get(ticker)
+            source = 'simulated'
+            if prediction:
+                rec_val = prediction['recommendation']
+                confidence_val = prediction.get('confidence', 50)
+                reasoning_val = prediction.get('summary', '')
+                pros_val = prediction.get('pros') or []
+                cons_val = prediction.get('cons') or []
+                target_val = prediction.get('targetPrice')
+                source = 'news'
+            elif stock.ai_recommendation:
+                source = 'model'
                 rec_val = stock.ai_recommendation
                 confidence_val = stock.ai_confidence or 50
                 reasoning_val = stock.ai_summary or ""
                 pros_val = json.loads(stock.ai_pros) if stock.ai_pros else []
                 cons_val = json.loads(stock.ai_cons) if stock.ai_cons else []
                 target_val = stock.ai_target_price
-            elif existing_analyses.get(ticker, {}).get('targetPrice'):
+            elif existing_analyses.get(ticker, {}).get('targetPrice') and existing_analyses[ticker].get('source') != 'news':
                 # Only reuse cached entries that carry a targetPrice; older entries without one
                 # had potentialReturn stuck at 0.0 and are regenerated below instead
                 exist_item = existing_analyses[ticker]
@@ -312,7 +402,9 @@ def _generate_and_cache_top_1000():
                 'keyPoints': key_points,
                 'riskLevel': risk_level,
                 'targetPrice': target_val,
-                'potentialReturn': potential_val
+                'potentialReturn': potential_val,
+                'source': source,
+                **({'predictionUpdatedAt': prediction_store.serialize_time(prediction.get('updated_at'))} if prediction else {}),
             })
         except Exception as e:
             print(f"Error processing stock {stock.symbol} for top 1000: {e}")
@@ -418,10 +510,13 @@ def _generate_and_cache_top_1000():
             }
         ]
 
+    for item in recommended + worst:
+        item.setdefault('source', 'simulated')
+
     cache_data = {
         'recommended': recommended,
         'worst': worst,
-        'lastUpdated': datetime.now().isoformat()
+        'lastUpdated': snapshot_started_at.isoformat()
     }
 
     try:
