@@ -162,15 +162,9 @@ def _update_with_live_quotes(cached_data):
                 except ValueError:
                     stock['changePercent'] = 0.0
                 
-                # Update potentialReturn based on the new live price if targetPrice is available
-                # potentialReturn = targetPrice_gain_pct
-                if 'targetPrice' in stock and stock['targetPrice'] and stock['price']:
-                    try:
-                        target = float(stock['targetPrice'])
-                        price = float(stock['price'])
-                        stock['potentialReturn'] = round((target - price) / price * 100, 1)
-                    except (ValueError, TypeError):
-                        pass
+                # Recompute potentialReturn against the live price
+                if stock.get('targetPrice'):
+                    stock['potentialReturn'] = ai_service.calc_potential_return(stock['targetPrice'], stock['price'])
         except Exception as e:
             print(f"Error updating live price for {stock['ticker']}: {e}")
 
@@ -267,15 +261,17 @@ def _generate_and_cache_top_1000():
                 reasoning_val = stock.ai_summary or ""
                 pros_val = json.loads(stock.ai_pros) if stock.ai_pros else []
                 cons_val = json.loads(stock.ai_cons) if stock.ai_cons else []
-                potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if (stock.ai_target_price and stock.price) else 0.0
-            elif ticker in existing_analyses:
+                target_val = stock.ai_target_price
+            elif existing_analyses.get(ticker, {}).get('targetPrice'):
+                # Only reuse cached entries that carry a targetPrice; older entries without one
+                # had potentialReturn stuck at 0.0 and are regenerated below instead
                 exist_item = existing_analyses[ticker]
                 rec_val = exist_item.get('recommendation', 'hold')
                 confidence_val = exist_item.get('confidence', 50)
                 reasoning_val = exist_item.get('reasoning', '')
                 pros_val = exist_item.get('keyPoints', []) if rec_val in ['strong_buy', 'buy'] else []
                 cons_val = exist_item.get('keyPoints', []) if rec_val in ['strong_sell', 'sell'] else []
-                potential_val = exist_item.get('potentialReturn', 0.0)
+                target_val = exist_item['targetPrice']
             else:
                 # Fast simulation fallback that doesn't hit external API keys
                 analysis = ai_service._simulate_stock_analysis(stock.to_dict(), None)
@@ -284,7 +280,9 @@ def _generate_and_cache_top_1000():
                 reasoning_val = analysis.get('summary', '')
                 pros_val = analysis.get('pros', [])
                 cons_val = analysis.get('cons', [])
-                potential_val = analysis.get('potentialReturn', 0.0)
+                target_val = analysis.get('targetPrice')
+
+            potential_val = ai_service.calc_potential_return(target_val, stock.price)
 
             # Determine keyPoints based on recommendation
             if rec_val in ['strong_buy', 'buy']:
@@ -313,6 +311,7 @@ def _generate_and_cache_top_1000():
                 'reasoning': reasoning_val,
                 'keyPoints': key_points,
                 'riskLevel': risk_level,
+                'targetPrice': target_val,
                 'potentialReturn': potential_val
             })
         except Exception as e:

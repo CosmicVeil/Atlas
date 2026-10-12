@@ -263,12 +263,25 @@ def analyze_stock(stock_info, portfolio_context=None):
         try:
             res = json.loads(response_text)
             res["isSimulated"] = False
+            res["potentialReturn"] = calc_potential_return(res.get("targetPrice"), price)
             return res
         except Exception as e:
             print(f"Error parsing AI stock analysis response: {e}")
 
     # --- FALLBACK SIMULATION GENERATOR ---
     return _simulate_stock_analysis(stock_info, portfolio_context)
+
+
+def calc_potential_return(target_price, current_price):
+    """Percent gain from current_price to target_price, rounded to 1 decimal. 0.0 if either is missing."""
+    try:
+        target = float(target_price)
+        current = float(current_price)
+    except (TypeError, ValueError):
+        return 0.0
+    if current <= 0 or target <= 0:
+        return 0.0
+    return round((target - current) / current * 100, 1)
 
 
 def recommend_portfolio(portfolio_context):
@@ -504,6 +517,7 @@ def _simulate_stock_analysis(stock_info, portfolio_context):
         "recommendation": recommendation,
         "confidence": confidence,
         "targetPrice": target_price,
+        "potentialReturn": calc_potential_return(target_price, price),
         "timeframe": "6-12 months",
         "summary": summary,
         "pros": pros,
