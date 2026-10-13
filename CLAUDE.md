@@ -76,4 +76,4 @@ npm --prefix frontend run lint             # has pre-existing errors; don't add 
 - Match the surrounding code's style, naming and comment density. Keep changes scoped to the task; mention unrelated issues instead of fixing them.
 - Add or update tests for behavior you change. Tests must stay offline (mock Yahoo, NewsData, AI providers, Kafka and MongoDB).
 - Work on a branch, not `main`. Don't push, merge, or delete data (MongoDB collections, Kafka topics, SQLite rows) without asking.
-- Bigger features can go through the `.ai-workflow` pipeline (plan → code → review); specs live in `docs/superpowers/specs/`.
+- Bigger features/bugs can go through the `.ai-workflow` pipeline (plan → code → review); specs live in `docs/superpowers/specs/`.
