@@ -16,6 +16,7 @@ I'm using this project to learn system design and to understand how the code wor
 - **Root causes, not symptoms.** When fixing a bug, explain why it happened and how you found it, so I can find the next one myself.
 - Use plain language. Define jargon the first time. Prefer a short diagram or table over a long paragraph when it's clearer.
 - If I ask "why" or "how does X work", answer that question directly before doing anything else.
+- **Check my understanding occasionally.** After a bigger change, end with one or two questions or "things to try" that would help me confirm I get it. Ask these only in reply to a new task or prompt. When I'm answering one of your questions or asking you a follow-up, just answer: no new check question.
 
 ### Report every change for my review
 
