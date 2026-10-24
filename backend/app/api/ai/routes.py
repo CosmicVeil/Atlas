@@ -9,6 +9,8 @@ from app.extensions import db
 from app.models.portfolio import Portfolio
 from app.models.holding import Holding
 from app.models.Stock import Stock
+from app.models.user import User
+from app import profile_fields
 from services import market_data
 from services import ai_service, prediction_store
 import pathlib
@@ -17,6 +19,8 @@ ai_bp = Blueprint('ai', __name__)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
 CACHE_FILE = os.path.join(DATA_DIR, 'ai_top_1000.json')
+# Cache enough entries for the largest 'top_n' a user can pick; each response is trimmed per user
+TOP_LIST_SIZE = profile_fields.FIELDS_BY_KEY['top_n']['max']
 
 
 def _get_portfolio_context(portfolio_id, user_id):
@@ -103,8 +107,10 @@ def analyze():
     if portfolio_id:
         portfolio_context = _get_portfolio_context(portfolio_id, user_id)
 
-    # 3. Analyze stock
-    analysis = ai_service.analyze_stock(stock_info, portfolio_context)
+    # 3. Analyze stock, tailored to the user's AI-visible profile preferences
+    user = db.session.get(User, int(user_id))
+    user_preferences = profile_fields.ai_context(user) if user else None
+    analysis = ai_service.analyze_stock(stock_info, portfolio_context, user_preferences)
     analysis['source'] = 'simulated' if analysis.get('isSimulated') else 'model'
     return jsonify(analysis), 200
 
@@ -295,7 +301,7 @@ def get_top_1000():
 
     # Update with live quotes on every request so prices are always fresh
     _update_with_live_quotes(cached_data)
-    return jsonify(cached_data), 200
+    return jsonify(_limit_to_user_top_n(cached_data)), 200
 
 
 @ai_bp.route('/top-1000/refresh', methods=['POST'])
@@ -304,7 +310,14 @@ def refresh_top_1000():
     """Regenerates the cached top 1000 analysis and returns it."""
     data = _generate_and_cache_top_1000()
     _update_with_live_quotes(data)
-    return jsonify(data), 200
+    return jsonify(_limit_to_user_top_n(data)), 200
+
+
+def _limit_to_user_top_n(data):
+    """Trims the shared cache to the signed-in user's 'top_n' profile setting."""
+    user = db.session.get(User, int(get_jwt_identity()))
+    top_n = profile_fields.get_value(user, 'top_n') if user else profile_fields.FIELDS_BY_KEY['top_n']['default']
+    return {**data, 'recommended': data.get('recommended', [])[:top_n], 'worst': data.get('worst', [])[:top_n]}
 
 
 
@@ -413,40 +426,40 @@ def _generate_and_cache_top_1000():
         # Sort and filter for recommended list
         recommended_candidates = [s for s in all_stocks_data if s['recommendation'] in ['strong_buy', 'buy']]
         recommended_candidates.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
-        recommended = recommended_candidates[:10]
+        recommended = recommended_candidates[:TOP_LIST_SIZE]
 
-        # Fill recommended to 10 if necessary using 'hold' stocks
-        if len(recommended) < 10:
+        # Fill recommended to TOP_LIST_SIZE if necessary using 'hold' stocks
+        if len(recommended) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers and s['recommendation'] == 'hold']
             remaining.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
-            recommended.extend(remaining[:10 - len(recommended)])
+            recommended.extend(remaining[:TOP_LIST_SIZE - len(recommended)])
 
-        # If still not 10, fill with any remaining stocks
-        if len(recommended) < 10:
+        # If still short, fill with any remaining stocks
+        if len(recommended) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers]
             remaining.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
-            recommended.extend(remaining[:10 - len(recommended)])
+            recommended.extend(remaining[:TOP_LIST_SIZE - len(recommended)])
 
         # Sort and filter for avoid list (worst)
         worst_candidates = [s for s in all_stocks_data if s['recommendation'] in ['strong_sell', 'sell']]
         worst_candidates.sort(key=lambda x: (x['potentialReturn'], -x['confidence']))
-        worst = worst_candidates[:10]
+        worst = worst_candidates[:TOP_LIST_SIZE]
 
-        # Fill worst to 10 if necessary using 'hold' stocks
-        if len(worst) < 10:
+        # Fill worst to TOP_LIST_SIZE if necessary using 'hold' stocks
+        if len(worst) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in worst + recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers and s['recommendation'] == 'hold']
             remaining.sort(key=lambda x: (x['potentialReturn'], -x['confidence']))
-            worst.extend(remaining[:10 - len(worst)])
+            worst.extend(remaining[:TOP_LIST_SIZE - len(worst)])
 
-        # If still not 10, fill with any remaining stocks (prioritizing non-buy stocks)
-        if len(worst) < 10:
+        # If still short, fill with any remaining stocks (prioritizing non-buy stocks)
+        if len(worst) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in worst + recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers]
             remaining.sort(key=lambda x: (1 if x['recommendation'] in ['strong_buy', 'buy'] else 0, x['potentialReturn'], -x['confidence']))
-            worst.extend(remaining[:10 - len(worst)])
+            worst.extend(remaining[:TOP_LIST_SIZE - len(worst)])
 
     # If database is empty or we couldn't seed, return standard mock items
     if not recommended:

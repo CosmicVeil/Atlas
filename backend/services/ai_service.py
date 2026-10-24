@@ -188,10 +188,11 @@ def _call_claude(system_prompt, user_prompt):
     return None
 
 
-def analyze_stock(stock_info, portfolio_context=None):
+def analyze_stock(stock_info, portfolio_context=None, user_preferences=None):
     """
     Analyzes a single stock's fundamentals and provides structured buy/sell suggestions.
-    Optionally personalizes recommendations using the user's active holdings.
+    Optionally personalizes recommendations using the user's active holdings and
+    the AI-visible profile preferences ({label: value}, see app/profile_fields.py).
     """
     ticker = stock_info['symbol']
     company_name = stock_info.get('name', ticker)
@@ -215,6 +216,10 @@ def analyze_stock(stock_info, portfolio_context=None):
             for h in holdings:
                 p_details.append(f"{h['symbol']}: {h['shares']} shares bought at ${h['buy_price']} (Current Price: ${h.get('current_price', h['buy_price'])})")
             portfolio_str = ", ".join(p_details)
+
+    preferences_str = "None"
+    if user_preferences:
+        preferences_str = "; ".join(f"{label}: {value}" for label, value in user_preferences.items())
 
     system_prompt = (
         "You are an expert financial analysis AI. You analyze stock fundamentals and generate detailed, objective investment recommendations. "
@@ -241,6 +246,8 @@ def analyze_stock(stock_info, portfolio_context=None):
 
     User Portfolio context (the user holds these assets): {portfolio_str}
 
+    Investor preferences (weigh the recommendation, risks and summary against these): {preferences_str}
+
     Provide an analysis JSON matching this exact structure:
     {{
       "ticker": "{ticker}",
@@ -251,7 +258,7 @@ def analyze_stock(stock_info, portfolio_context=None):
       "confidence": 0-100 (integer),
       "targetPrice": float (12-month projection),
       "timeframe": "6-12 months",
-      "summary": "High level paragraph summarizing the analysis, noting if the stock is a fit for the user's portfolio and why.",
+      "summary": "High level paragraph summarizing the analysis, noting if the stock is a fit for the user's portfolio and stated preferences, and why.",
       "pros": ["bullet point 1", "bullet point 2", "etc (up to 5 points)"],
       "cons": ["bullet point 1", "bullet point 2", "etc (up to 5 points)"],
       "riskFactors": ["risk 1", "risk 2"]

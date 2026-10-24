@@ -1,13 +1,117 @@
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { User, LogOut, Settings } from 'lucide-react';
+import { User, LogOut, Save } from 'lucide-react';
+import { getProfile, updateProfile } from '../api/profile';
+import { changedValues, usesDropdown } from '../components/profile/profileForm';
+
+// Renders one field from the backend registry (backend/app/profile_fields.py)
+function ProfileField({ field, value, error, onChange }) {
+  const id = `profile-${field.key}`;
+  const inputClass = 'w-full bg-transparent border border-white/20 px-3 py-2 text-sm text-white font-light focus:outline-none focus:border-white/60';
+  let control;
+
+  if (field.type === 'select' && usesDropdown(field)) {
+    control = (
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputClass} cursor-pointer`}>
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value} className="bg-black">{option.label}</option>
+        ))}
+      </select>
+    );
+  } else if (field.type === 'select') {
+    control = (
+      <div role="group" aria-labelledby={`${id}-label`} className="flex flex-wrap gap-2">
+        {field.options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+            className={`px-2.5 py-1 text-[11px] border transition-all cursor-pointer ${
+              value === option.value
+                ? 'bg-white text-black border-white'
+                : 'bg-transparent text-white/60 border-white/20 hover:text-white hover:border-white/40'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    );
+  } else {
+    control = (
+      <input
+        id={id}
+        type={field.type === 'number' ? 'number' : field.type}
+        value={value ?? ''}
+        min={field.min}
+        max={field.max}
+        maxLength={field.max_length}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputClass}
+      />
+    );
+  }
+
+  return (
+    <div className="border border-white/5 p-4 bg-black/40">
+      <label id={`${id}-label`} htmlFor={id} className="text-xs text-white/40 tracking-wider uppercase mb-2 block">{field.label}</label>
+      {control}
+      {field.help && <p className="text-[11px] text-white/30 mt-2">{field.help}</p>}
+      {error && <p className="text-[11px] text-rose-400 mt-2">{error}</p>}
+    </div>
+  );
+}
 
 function Profile() {
-  const { token, email, logout } = useAuth();
-  const { currency, setCurrency, EXCHANGE_RATES } = useCurrency();
+  const { token, logout, login } = useAuth();
+  const { setCurrency } = useCurrency();
   const navigate = useNavigate();
+  const [fields, setFields] = useState([]);
+  const [saved, setSaved] = useState({});
+  const [draft, setDraft] = useState({});
+  const [errors, setErrors] = useState({});
+  const [status, setStatus] = useState('loading');
+
+  useEffect(() => {
+    if (!token) return;
+    getProfile(token)
+      .then((data) => {
+        if (data.error) throw new Error(data.error);
+        setFields(data.fields);
+        setSaved(data.values);
+        setDraft(data.values);
+        setStatus('idle');
+      })
+      .catch(() => setStatus('load-error'));
+  }, [token]);
+
+  const changes = changedValues(fields, saved, draft);
+  const hasChanges = Object.keys(changes).length > 0;
+
+  async function handleSave() {
+    setStatus('saving');
+    setErrors({});
+    try {
+      const data = await updateProfile(token, changes);
+      if (data.errors || data.error) {
+        setErrors(data.errors || { _: data.error });
+        setStatus('idle');
+        return;
+      }
+      setSaved(data.values);
+      setDraft(data.values);
+      setCurrency(data.values.currency);
+      if (changes.email) login(token, data.values.email);
+      setStatus('saved');
+    } catch {
+      setErrors({ _: 'Could not save your profile. Please try again.' });
+      setStatus('idle');
+    }
+  }
 
   function handleLogout() {
     logout();
@@ -45,11 +149,21 @@ function Profile() {
           <p className="text-xs text-white/40 mt-1 tracking-wider uppercase">Manage your Atlas settings</p>
         </div>
 
-        <div className="space-y-4 mb-8">
-          <div className="border border-white/5 p-4 bg-black/40">
-            <p className="text-xs text-white/40 tracking-wider uppercase mb-1">Email Address</p>
-            <p className="text-base text-white font-light">{email || 'Not available'}</p>
-          </div>
+        <div className="space-y-4 mb-6">
+          {status === 'loading' && <p className="text-sm text-white/40 text-center">Loading profile...</p>}
+          {status === 'load-error' && <p className="text-sm text-rose-400 text-center">Could not load your profile.</p>}
+          {fields.map((field) => (
+            <ProfileField
+              key={field.key}
+              field={field}
+              value={draft[field.key]}
+              error={errors[field.key]}
+              onChange={(value) => {
+                setDraft((prev) => ({ ...prev, [field.key]: value }));
+                if (status === 'saved') setStatus('idle');
+              }}
+            />
+          ))}
           <div className="border border-white/5 p-4 bg-black/40">
             <p className="text-xs text-white/40 tracking-wider uppercase mb-1">Session Status</p>
             <p className="text-base text-white font-light flex items-center gap-2">
@@ -66,28 +180,19 @@ function Profile() {
               )}
             </p>
           </div>
-          <div className="border border-white/5 p-4 bg-black/40">
-            <p className="text-xs text-white/40 tracking-wider uppercase mb-2 flex items-center gap-1.5">
-              <Settings className="w-3.5 h-3.5" />
-              Display Currency
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {Object.keys(EXCHANGE_RATES).map((curr) => (
-                <button
-                  key={curr}
-                  onClick={() => setCurrency(curr)}
-                  className={`px-2.5 py-1 text-[11px] border transition-all cursor-pointer ${
-                    currency === curr
-                      ? 'bg-white text-black border-white'
-                      : 'bg-transparent text-white/60 border-white/20 hover:text-white hover:border-white/40'
-                  }`}
-                >
-                  {curr} ({EXCHANGE_RATES[curr].symbol})
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
+
+        {errors._ && <p className="text-xs text-rose-400 mb-3 text-center">{errors._}</p>}
+        {fields.length > 0 && (
+          <button
+            onClick={handleSave}
+            disabled={!hasChanges || status === 'saving'}
+            className="w-full py-3 mb-3 bg-white text-black text-sm tracking-wide transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Save className="w-4 h-4" strokeWidth={1.5} />
+            {status === 'saving' ? 'Saving...' : status === 'saved' && !hasChanges ? 'Saved' : 'Save Changes'}
+          </button>
+        )}
 
         <motion.button
           onClick={handleLogout}
