@@ -2,7 +2,24 @@
 
 Algorithmic trading and stock analysis platform powered by AI.
 
-## Running the Project
+## Quick Start
+
+You need [Git](https://git-scm.com/downloads), [Python 3.9+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/). Then run:
+
+```bash
+npx github:CosmicVeil/Atlas
+```
+
+This clones Atlas into `./Atlas`, creates the Python virtual environment, installs backend and frontend dependencies, writes `backend/.env` with fresh secret keys, and starts both servers. Open the frontend URL Vite prints (usually http://localhost:5173). Press Ctrl+C to stop.
+
+Run the same command again from the same folder (or `npm start` inside `Atlas/`) to start it later; dependencies are only reinstalled when `requirements.txt` or `package-lock.json` change.
+
+- `npx github:CosmicVeil/Atlas my-folder` clones into `my-folder` instead.
+- `npx github:CosmicVeil/Atlas --no-start` sets everything up without starting the servers.
+
+API keys are optional: without them the app uses local fundamentals and simulated AI analysis. Add keys to `backend/.env` to enable real AI analysis (OpenAI, Anthropic or NVIDIA) and Alpha Vantage data. Market news needs the Docker pipeline below.
+
+## Running the Project Manually
 
 ### 1. Run the Backend
 Navigate to the `backend` folder, set up your Python virtual environment and run the Flask server:
@@ -46,6 +63,11 @@ Backend, from `backend/`, with the virtual environment's Python (`.venv\Scripts\
 ```
 
 The tests run offline: they mock NewsData, NVIDIA, Redpanda and MongoDB.
+
+The `npx` launcher (`bin/launcher.mjs`), from the project root:
+```bash
+npm test
+```
 
 ## AI Development Workflow
 
