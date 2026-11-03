@@ -52,7 +52,7 @@ npm --prefix frontend run build            # production build
 npm --prefix frontend run lint             # has pre-existing errors; don't add new ones
 ```
 
-`python run.py` starts backend and frontend together. News pipeline commands (start, logs, one-off runs, clearing data, rebuilding) are in `docs/news-pipeline.md`.
+`python run.py` starts backend and frontend together. `npx github:CosmicVeil/Atlas` (or `npm start` in the root) runs `bin/launcher.mjs`, which clones if needed, sets up venv, deps and `backend/.env`, then calls `run.py`; test it with `npm test` from the root. News pipeline commands (start, logs, one-off runs, clearing data, rebuilding) are in `docs/news-pipeline.md`.
 
 ## Architecture
 
