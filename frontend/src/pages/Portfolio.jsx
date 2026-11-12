@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { getPortfolios, createPortfolio, updatePortfolio, deletePortfolio } from '../api/portfolio';
 import { getHoldings as getHoldingsApi, addHolding as addHoldingApi, deleteHolding as deleteHoldingApi } from '../api/holdings';
 import { getPortfolioRecommendations, getPredictionsForSymbols } from '../api/ai';
@@ -61,6 +61,7 @@ function MarketWarningCard({ warning, tone }) {
 
 function Portfolio() {
   const navigate = useNavigate();
+  const portfolioIdToOpen = useLocation().state?.portfolioId;
   const { token } = useAuth();
   const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
   const [portfolios, setPortfolios] = useState([]);
@@ -104,18 +105,21 @@ function Portfolio() {
   // Fetch portfolios from API
   useEffect(() => {
     if (token) {
-      fetchPortfolios();
+      fetchPortfolios(portfolioIdToOpen);
     }
-  }, [token]);
+  }, [token, portfolioIdToOpen]);
 
   useEffect(() => {
     selectedPortfolioIdRef.current = selectedPortfolio?.id || null;
   }, [selectedPortfolio]);
 
-  async function fetchPortfolios() {
+  async function fetchPortfolios(openId) {
     const data = await getPortfolios(token);
     if (Array.isArray(data)) {
       setPortfolios(data);
+      if (openId) {
+        setSelectedPortfolio(data.find(portfolio => portfolio.id === openId) || null);
+      }
     } else {
       setPortfolios([]);
     }
