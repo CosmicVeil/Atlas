@@ -6,6 +6,72 @@ import HomeScrollIntro from '../components/home/HomeScrollIntro';
 import IntroSceneList from '../components/home/IntroSceneList';
 import { getReducedMotion, getServerReducedMotion, subscribeReducedMotion } from '../components/home/reducedMotion';
 
+const FEATURES = [
+  {
+    icon: Wallet,
+    title: 'Portfolio Management',
+    description: 'Track multiple portfolios with real-time performance metrics and AI-driven insights.',
+    to: '/portfolio',
+  },
+  {
+    icon: Search,
+    title: 'Stock Data Explorer',
+    description: 'Access comprehensive market data, historical charts, and real-time analytics.',
+    to: '/stock-data',
+  },
+  {
+    icon: Brain,
+    title: 'AI Market Analysis',
+    description: 'Daily analysis of top 1000 stocks with recommendations and risk assessment.',
+    to: '/ai-analysis',
+  },
+  {
+    icon: LineChart,
+    title: 'Personal AI Advisor',
+    description: 'Custom stock analysis and recommendations based on your portfolio and budget.',
+    to: '/ai-analysis',
+  },
+  {
+    icon: User,
+    title: 'User Profile',
+    description: 'Manage preferences, risk tolerance, and investment goals in one place.',
+    to: '/profile',
+  },
+  {
+    icon: BarChart3,
+    title: 'Market Insights',
+    description: 'Best and worst performing stocks with detailed AI-generated explanations.',
+    to: '/market-news',
+  },
+];
+
+function FeatureCard({ icon: Icon, title, description, onActivate }) {
+  return (
+    <motion.div
+      role="button"
+      tabIndex={0}
+      aria-label={title}
+      className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden focus:outline-none focus-visible:border-white/30"
+      whileHover={{ scale: 1.02 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
+    >
+      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
+      <div className="relative">
+        <Icon className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
+        <h3 className="text-xl text-white mb-3 tracking-wide">{title}</h3>
+        <p className="text-sm text-white/40 leading-relaxed">{description}</p>
+      </div>
+    </motion.div>
+  );
+}
+
 function Home() {
   const navigate = useNavigate();
   const reduceMotion = useSyncExternalStore(subscribeReducedMotion, getReducedMotion, getServerReducedMotion);
@@ -72,103 +138,15 @@ function Home() {
       {/* Features Grid */}
       <section className="relative max-w-7xl mx-auto px-8 py-32">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-white/5">
-          {/* Portfolio Management */}
-          <motion.div
-            className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            onClick={() => navigate('/portfolio')}
-          >
-            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
-            <div className="relative">
-              <Wallet className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
-              <h3 className="text-xl text-white mb-3 tracking-wide">Portfolio Management</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                Track multiple portfolios with real-time performance metrics and AI-driven insights.
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Stock Data */}
-          <motion.div
-            className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          >
-            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
-            <div className="relative">
-              <Search className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
-              <h3 className="text-xl text-white mb-3 tracking-wide">Stock Data Explorer</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                Access comprehensive market data, historical charts, and real-time analytics.
-              </p>
-            </div>
-          </motion.div>
-
-          {/* AI Analysis */}
-          <motion.div
-            className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          >
-            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
-            <div className="relative">
-              <Brain className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
-              <h3 className="text-xl text-white mb-3 tracking-wide">AI Market Analysis</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                Daily analysis of top 1000 stocks with recommendations and risk assessment.
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Personal Analysis */}
-          <motion.div
-            className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          >
-            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
-            <div className="relative">
-              <LineChart className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
-              <h3 className="text-xl text-white mb-3 tracking-wide">Personal AI Advisor</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                Custom stock analysis and recommendations based on your portfolio and budget.
-              </p>
-            </div>
-          </motion.div>
-
-          {/* User Profile */}
-          <motion.div
-            className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            onClick={() => navigate('/profile')}
-          >
-            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
-            <div className="relative">
-              <User className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
-              <h3 className="text-xl text-white mb-3 tracking-wide">User Profile</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                Manage preferences, risk tolerance, and investment goals in one place.
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Market Insights */}
-          <motion.div
-            className="bg-black border border-white/5 p-10 group cursor-pointer relative overflow-hidden"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          >
-            <div className="absolute inset-0 bg-white/0 group-hover:bg-white/[0.02] transition-all duration-300"></div>
-            <div className="relative">
-              <BarChart3 className="w-8 h-8 text-white/60 mb-6" strokeWidth={1} />
-              <h3 className="text-xl text-white mb-3 tracking-wide">Market Insights</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                Best and worst performing stocks with detailed AI-generated explanations.
-              </p>
-            </div>
-          </motion.div>
+          {FEATURES.map((feature) => (
+            <FeatureCard
+              key={feature.title}
+              icon={feature.icon}
+              title={feature.title}
+              description={feature.description}
+              onActivate={() => navigate(feature.to)}
+            />
+          ))}
         </div>
       </section>
 
@@ -181,7 +159,7 @@ function Home() {
               <span className="text-sm tracking-wider text-white/40">ATLAS</span>
             </div>
             <p className="text-xs text-white/20 tracking-wide">
-              © 2026 ATLAS. All rights reserved.
+              © {new Date().getFullYear()} ATLAS. All rights reserved.
             </p>
           </div>
         </div>

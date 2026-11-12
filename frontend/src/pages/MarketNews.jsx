@@ -55,7 +55,7 @@ function MarketNews() {
           positive: data.positive || [],
         });
       }
-    } catch (err) {
+    } catch {
       setError('Unable to load market warnings.');
     } finally {
       setLoading(false);

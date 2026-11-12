@@ -190,7 +190,7 @@ function AIAnalysisScreen() {
       } else {
         setBudgetAdvice(res);
       }
-    } catch (err) {
+    } catch {
       setBudgetError("Failed to get budget advice. Please try again.");
     } finally {
       setBudgetLoading(false);

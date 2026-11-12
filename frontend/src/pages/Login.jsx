@@ -17,13 +17,18 @@ function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const data = await loginApi(email, password);
-    setLoading(false);
-    if (data.error) {
-      setError(data.error);
-    } else {
-      login(data.token, data.email);
-      navigate('/');
+    try {
+      const data = await loginApi(email, password);
+      if (data.error) {
+        setError(data.error);
+      } else {
+        login(data.token, data.email);
+        navigate('/');
+      }
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }
 
