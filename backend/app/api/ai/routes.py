@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from datetime import datetime, timezone
+from math import isfinite
 from app.extensions import db
 from app.models.portfolio import Portfolio
 from app.models.holding import Holding
@@ -146,8 +147,10 @@ def budget_suggest():
 
     try:
         budget = float(budget)
-    except ValueError:
+    except (TypeError, ValueError, OverflowError):
         return jsonify({'error': 'Budget must be a number'}), 400
+    if not isfinite(budget) or budget < 0.01:
+        return jsonify({'error': 'Budget must be at least $0.01 and finite'}), 400
 
     # Get portfolio context
     portfolio_context = None

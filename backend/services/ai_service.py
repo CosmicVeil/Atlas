@@ -3,6 +3,7 @@ import json
 import operator
 import requests
 import random
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_UP
 from typing_extensions import TypedDict
 from typing import Annotated
 try:
@@ -364,75 +365,129 @@ def recommend_portfolio(portfolio_context):
     return _simulate_portfolio_analysis(portfolio_context)
 
 
+def _positive_decimal(value):
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() and number > 0 else None
+
+
+def _budget_purchase(stock, allocation_cents, reason):
+    """Round fractional quantities down to six decimal places."""
+    price = _positive_decimal(stock.get("price"))
+    if price is None:
+        return None, 0
+
+    allocation = Decimal(allocation_cents).scaleb(-2)
+    shares = (allocation / price * 1_000_000).to_integral_value(rounding=ROUND_DOWN).scaleb(-6)
+    if shares == 0:
+        return None, 0
+
+    cost_cents = int((shares * price * 100).to_integral_value(rounding=ROUND_UP))
+    return {
+        "ticker": stock["symbol"],
+        "sharesToBuy": float(shares),
+        "pricePerShare": float(price),
+        "cost": cost_cents / 100,
+        "sector": stock["sector"],
+        "reason": reason,
+    }, cost_cents
+
+
+def _budget_result(budget_cents, spent_cents, purchases, reasoning, is_simulated):
+    return {
+        "budget": budget_cents / 100,
+        "totalAllocated": spent_cents / 100,
+        "remainingCash": (budget_cents - spent_cents) / 100,
+        "reasoning": reasoning,
+        "purchases": purchases,
+        "isSimulated": is_simulated,
+    }
+
+
+def _budget_from_model(plan, budget_cents, stocks_by_symbol):
+    if not isinstance(plan, dict) or not isinstance(plan.get("reasoning"), str):
+        return None
+    suggestions = plan.get("purchases")
+    if not isinstance(suggestions, list) or not 1 <= len(suggestions) <= 4:
+        return None
+
+    purchases = []
+    selected = set()
+    allocated_cents = spent_cents = 0
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict) or not isinstance(suggestion.get("ticker"), str):
+            return None
+        ticker = suggestion["ticker"].strip().upper()
+        amount = _positive_decimal(suggestion.get("allocation"))
+        if ticker not in stocks_by_symbol or ticker in selected or amount is None:
+            return None
+        if amount > Decimal(budget_cents).scaleb(-2):
+            return None
+        cents = int(amount * 100)
+        allocated_cents += cents
+        if amount * 100 != cents or allocated_cents > budget_cents:
+            return None
+        purchase, cost_cents = _budget_purchase(stocks_by_symbol[ticker], cents, suggestion.get("reason", ""))
+        if purchase is None:
+            return None
+        selected.add(ticker)
+        purchases.append(purchase)
+        spent_cents += cost_cents
+
+    return _budget_result(budget_cents, spent_cents, purchases, plan["reasoning"], False)
+
+
 def suggest_buys(budget, portfolio_context=None, available_stocks=None):
-    """
-    Recommends a list of stocks to buy within a specific budget, taking current portfolio holdings into account to ensure sector diversification.
-    """
-    if not available_stocks:
-        available_stocks = []
+    """Suggest fractional purchases using dollar allocations and Atlas prices."""
+    budget_cents = int(Decimal(str(budget)) * 100)
+    available_stocks = [
+        stock for stock in available_stocks or [] if _positive_decimal(stock.get("price"))
+    ]
+    if not available_stocks or budget_cents < 1:
+        return _simulate_budget_suggestions(budget_cents, available_stocks)
 
-    holdings_str = "None"
-    if portfolio_context and 'holdings' in portfolio_context:
-        holdings = portfolio_context['holdings']
-        if holdings:
-            holdings_str = ", ".join([f"{h['symbol']} ({h['shares']} shares)" for h in holdings])
-
-    # Convert available stocks to a simple text representation
+    holdings = (portfolio_context or {}).get("holdings", [])
+    holdings_str = ", ".join(f"{h['symbol']} ({h['shares']} shares)" for h in holdings) or "None"
+    candidates = available_stocks[:20]
     stocks_summary = json.dumps([
-        {
-            "symbol": s['symbol'],
-            "name": s['name'],
-            "price": s['price'],
-            "sector": s['sector'],
-            "pe_ratio": s['pe_ratio']
-        } for s in available_stocks[:20]  # Limit to top 20 to save prompt space
+        {field: stock[field] for field in ("symbol", "name", "price", "sector", "pe_ratio")}
+        for stock in candidates
     ], indent=2)
+    cash = f"{Decimal(budget_cents).scaleb(-2):.2f}"
 
     system_prompt = (
-        "You are a financial planning AI. You suggest specific quantities of stocks to purchase given a cash budget. "
-        "You must respond ONLY with a single JSON block. Do not include any conversational text."
+        "You are a financial planning AI. Suggest dollar allocations for a cash budget. "
+        "Respond only with a JSON object."
     )
-
     user_prompt = f"""
-    Cash Budget to Invest: ${budget}
-    Existing User Holdings: {holdings_str}
+    Cash budget in USD: ${cash}
+    Existing user holdings: {holdings_str}
+    Available stocks: {stocks_summary}
 
-    Select from these available stocks to recommend:
-    {stocks_summary}
+    Select up to 4 different tickers from the available stocks. Use most of the budget
+    when appropriate and never exceed it. Allocations are dollar amounts with at most
+    two decimal places. Fractional shares are allowed, so you may allocate less than
+    the price of a share. Avoid sectors the user already owns heavily. Explain any cash
+    you intentionally leave unallocated.
 
-    Determine the best allocation of the ${budget} budget to purchase shares of these stocks. Recommend 2 to 4 stocks, allocating the cash logically.
-    Ensure that the recommendations do not over-concentrate the user in a sector they already own heavily.
-
-    Respond with this exact JSON structure:
+    Return this JSON structure:
     {{
-      "budget": {budget},
-      "totalAllocated": float (sum of recommended purchases),
-      "remainingCash": float (cash left over),
-      "reasoning": "A paragraph explaining why this selection makes sense given their budget and portfolio diversification needs.",
+      "reasoning": "Explain the selection and allocation.",
       "purchases": [
-        {{
-          "ticker": "MSFT",
-          "sharesToBuy": integer,
-          "pricePerShare": float,
-          "cost": float,
-          "sector": "sector name",
-          "reason": "Brief explanation of why this stock is recommended."
-        }}
+        {{"ticker": "MSFT", "allocation": 25.00, "reason": "Brief rationale."}}
       ]
     }}
     """
-
-    response_text = _call_multiple_models(system_prompt, user_prompt)
+    response_text = _call_claude(system_prompt, user_prompt)
     if response_text:
-        try:
-            res = json.loads(response_text)
-            res["isSimulated"] = False
-            return res
-        except Exception as e:
-            print(f"Error parsing budget suggestions: {e}")
-
-    # --- FALLBACK SIMULATION GENERATOR ---
-    return _simulate_budget_suggestions(budget, portfolio_context, available_stocks)
+        result = _budget_from_model(
+            _extract_json(response_text), budget_cents, {stock["symbol"]: stock for stock in candidates}
+        )
+        if result is not None:
+            return result
+    return _simulate_budget_suggestions(budget_cents, available_stocks)
 
 
 # =====================================================================
@@ -589,7 +644,7 @@ def _simulate_portfolio_analysis(portfolio_context):
     }
 
 
-def _simulate_budget_suggestions(budget, portfolio_context, available_stocks):
+def _simulate_budget_suggestions(budget_cents, available_stocks):
     if not available_stocks:
         # Generate some default stocks
         available_stocks = [
@@ -602,55 +657,30 @@ def _simulate_budget_suggestions(budget, portfolio_context, available_stocks):
             {"symbol": "XOM", "name": "Exxon Mobil Corp", "price": 115.0, "sector": "Energy", "pe_ratio": 12.0},
         ]
 
-    # Filter out sectors the user already holds to improve diversification
-    owned_sectors = set()
-    if portfolio_context and 'holdings' in portfolio_context:
-        # Just map symbols to sectors roughly
-        sector_map = {s['symbol']: s['sector'] for s in available_stocks}
-        for h in portfolio_context['holdings']:
-            sect = sector_map.get(h['symbol'])
-            if sect:
-                owned_sectors.add(sect)
+    # Prefer lower P/E ratios, as in the original budget suggestions.
+    stocks = sorted(available_stocks, key=lambda stock: float(stock.get("pe_ratio") or 25))
+    selected = stocks[:max(0, min(3, budget_cents))]
+    if not selected:
+        return _budget_result(budget_cents, 0, [], "No purchases fit the budget.", True)
 
-    # Sort available stocks by PE ratio (prefer lower PE for budget suggestions, to represent value/stability)
-    stocks_to_pick = sorted(available_stocks, key=lambda x: float(x.get('pe_ratio', 25.0)) if x.get('pe_ratio') else 25.0)
-
+    allocation, extra_cents = divmod(budget_cents, len(selected))
     purchases = []
-    remaining = float(budget)
-    
-    for s in stocks_to_pick:
-        price = float(s['price'])
-        if price <= remaining:
-            # Decide shares
-            shares = int(remaining // price)
-            if shares > 0:
-                # Cap shares so we buy multiple stocks
-                if len(purchases) < 2 and shares > 2:
-                    shares = max(1, shares // 2)
-                
-                cost = shares * price
-                remaining -= cost
-                purchases.append({
-                    "ticker": s['symbol'],
-                    "sharesToBuy": shares,
-                    "pricePerShare": price,
-                    "cost": round(cost, 2),
-                    "sector": s['sector'],
-                    "reason": f"Offers strong value profile in the {s['sector']} sector. Good choice for budget entry."
-                })
-        if remaining < 10.0 or len(purchases) >= 3:
-            break
+    spent_cents = 0
+    for index, stock in enumerate(selected):
+        purchase, cost_cents = _budget_purchase(
+            stock, allocation + (index < extra_cents),
+            f"Offers a lower-P/E option in the {stock['sector']} sector.",
+        )
+        if purchase is not None:
+            purchases.append(purchase)
+            spent_cents += cost_cents
 
-    total_allocated = round(float(budget) - remaining, 2)
-
-    return {
-        "budget": budget,
-        "totalAllocated": total_allocated,
-        "remainingCash": round(remaining, 2),
-        "reasoning": f"We allocated ${total_allocated} of your budget into {len(purchases)} high-quality assets. This list prioritizes lower P/E ratios and sector diversification, avoiding over-exposure.",
-        "purchases": purchases,
-        "isSimulated": True
-    }
+    return _budget_result(
+        budget_cents, spent_cents, purchases,
+        f"The fallback allocates ${spent_cents / 100:.2f} across {len(purchases)} stocks, "
+        "prioritizing lower P/E ratios.",
+        True,
+    )
 
 
 # ── Multi-Model LangGraph Workflow ──

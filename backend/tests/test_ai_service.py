@@ -36,5 +36,45 @@ class NvidiaProviderTests(unittest.TestCase):
         )
 
 
+class BudgetSuggestionsTests(unittest.TestCase):
+    stocks = [
+        {"symbol": "AAA", "name": "A", "price": 100, "sector": "Technology", "pe_ratio": 20},
+        {"symbol": "BBB", "name": "B", "price": 200, "sector": "Health Care", "pe_ratio": 15},
+    ]
+
+    def test_model_allocations_are_converted_to_fractional_shares_at_atlas_prices(self):
+        with patch.object(ai_service, "_call_claude", return_value=(
+            '{"reasoning":"Split the budget","purchases":['
+            '{"ticker":"AAA","allocation":25,"pricePerShare":1},'
+            '{"ticker":"BBB","allocation":25}]}'
+        )):
+            result = ai_service.suggest_buys(50, available_stocks=self.stocks)
+
+        self.assertFalse(result["isSimulated"])
+        self.assertEqual([item["sharesToBuy"] for item in result["purchases"]], [0.25, 0.125])
+        self.assertEqual(result["totalAllocated"], 50)
+        self.assertEqual(result["remainingCash"], 0)
+
+    def test_fallback_splits_a_budget_smaller_than_one_share(self):
+        with patch.object(ai_service, "_call_claude", return_value=None):
+            result = ai_service.suggest_buys(25.01, available_stocks=self.stocks)
+
+        self.assertTrue(result["isSimulated"])
+        self.assertEqual([item["cost"] for item in result["purchases"]], [12.51, 12.50])
+        self.assertEqual(result["totalAllocated"], 25.01)
+        self.assertEqual(result["remainingCash"], 0)
+
+    def test_over_budget_model_plan_uses_the_fractional_fallback(self):
+        with patch.object(ai_service, "_call_claude", return_value=(
+            '{"reasoning":"Split the budget","purchases":['
+            '{"ticker":"AAA","allocation":20},{"ticker":"BBB","allocation":10}]}'
+        )):
+            result = ai_service.suggest_buys(25, available_stocks=self.stocks)
+
+        self.assertTrue(result["isSimulated"])
+        self.assertEqual(result["totalAllocated"], 25)
+        self.assertEqual(result["remainingCash"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
