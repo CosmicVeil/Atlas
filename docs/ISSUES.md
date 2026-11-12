@@ -113,6 +113,15 @@ These were small, safe fixes applied directly.
 23. **`/market-news` route is unprotected** (`frontend/src/App.jsx`) while the rest of the app
     is auth-gated. Decide if intentional; the page calls authed endpoints with a token it may
     not have.
+23a. **Market News page appears broken — permanently empty.** Shows "No accepted negative/
+    positive warnings yet" with no data (see screenshot report). Root cause: the page reads AI
+    warnings from MongoDB (`backend/services/warning_store.py`), populated by the Kafka news
+    pipeline (`services/news.py` → `warning_streamer.py`), which requires MongoDB + Kafka +
+    `NEWS_API_KEY` running (`docker-compose.news.yml`). When the pipeline is off the collection
+    is empty. Problems: (a) no "pipeline offline / no data yet" messaging — looks broken;
+    (b) `MarketNews.jsx` only fetches when `token` exists but the route is public, so a
+    logged-out user sees a blank page with no login prompt; (c) no distinction between "loaded,
+    genuinely empty" and "backend/pipeline unavailable."
 24. **`setState` called synchronously inside effects** — cascading renders flagged by lint in
     `MarketNews.jsx:67`, `Portfolio.jsx:123`, `UserStockAnalysis.jsx:120`.
 25. **Functions accessed before declaration inside `useEffect`** — `loadTop1000`,
