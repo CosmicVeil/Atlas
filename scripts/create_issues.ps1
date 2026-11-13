@@ -2,7 +2,7 @@
 # Prereq: `gh auth login` completed for github.com with repo access.
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts/create_issues.ps1
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $gh = "$env:ProgramFiles\GitHub CLI\gh.exe"
 $repo = "CosmicVeil/Atlas"
 
@@ -19,7 +19,7 @@ $labels = @(
   @{ name = "enhancement"; color = "a2eeef" }
 )
 foreach ($l in $labels) {
-  & $gh label create $l.name --color $l.color --repo $repo 2>$null
+  try { & $gh label create $l.name --color $l.color --repo $repo 2>$null } catch {}
 }
 
 function New-Issue($title, $body, $labelCsv) {
