@@ -38,3 +38,6 @@ instance/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Generated AI analysis cache
+backend/app/data/ai_top_1000.json

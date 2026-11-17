@@ -3,7 +3,7 @@ import os
 import signal
 from typing import Any, Dict
 
-from confluent_kafka import Consumer, KafkaException, KafkaError
+from confluent_kafka import Consumer, Producer, KafkaException, KafkaError
 
 from services.warning_analysis import analyze_news_event
 from services.warning_store import save_accepted_warnings
@@ -11,6 +11,7 @@ from services.warning_store import save_accepted_warnings
 
 KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_NEWS_TOPIC = os.environ.get("KAFKA_TOPIC", "atlas.market.news")
+KAFKA_WARNINGS_TOPIC = os.environ.get("KAFKA_WARNINGS_TOPIC", "atlas.market.warnings")
 KAFKA_GROUP_ID = os.environ.get("WARNING_STREAM_GROUP_ID", "atlas-warning-streamer")
 
 SHOULD_STOP = False
@@ -44,7 +45,45 @@ def create_consumer() -> Consumer:
     )
 
 
-def process_news_event(news_event: Dict[str, Any]) -> int:
+def create_producer() -> Producer:
+    return Producer({
+        "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
+        "acks": "all", "retries": 5, "linger.ms": 100,
+    })
+
+
+def _delivery_report(error, message):
+    if error:
+        print(f"[warning-streamer] Failed to publish warning: {error}")
+
+
+def publish_accepted_warnings(producer, warnings) -> int:
+    published = 0
+    for warning in warnings:
+        if not warning.get("accepted"):
+            continue
+        try:
+            payload = {key: value for key, value in warning.items() if key != "_id"}
+            producer.produce(
+                KAFKA_WARNINGS_TOPIC, key=warning.get("symbol"),
+                value=json.dumps(payload, default=lambda value: value.isoformat()),
+                callback=_delivery_report,
+            )
+            producer.poll(0)
+            published += 1
+        except Exception as exc:
+            print(f"[warning-streamer] Failed to publish warning: {exc}")
+    try:
+        remaining = producer.flush(timeout=10)
+        if remaining:
+            print(f"[warning-streamer] Failed to publish {remaining} warning(s) before timeout")
+    except Exception as exc:
+        print(f"[warning-streamer] Failed to publish warnings: {exc}")
+    print(f"[warning-streamer] Published {published} warning(s) to {KAFKA_WARNINGS_TOPIC}")
+    return published
+
+
+def process_news_event(news_event: Dict[str, Any], producer=None) -> int:
     """
     Convert one news event into accepted warnings and store them in MongoDB.
 
@@ -54,6 +93,8 @@ def process_news_event(news_event: Dict[str, Any]) -> int:
     warnings = analyze_news_event(news_event)
     saved_count = save_accepted_warnings(warnings)
     print(f"[warning-streamer] Saved {saved_count} warning(s) from event {news_event.get('id')}")
+    if producer is not None:
+        publish_accepted_warnings(producer, warnings)
     return saved_count
 
 
@@ -62,6 +103,7 @@ def run_forever() -> None:
     signal.signal(signal.SIGTERM, _stop_streamer)
     signal.signal(signal.SIGINT, _stop_streamer)
 
+    producer = create_producer()
     consumer = create_consumer()
     consumer.subscribe([KAFKA_NEWS_TOPIC])
     print(f"[warning-streamer] Listening to {KAFKA_NEWS_TOPIC} on {KAFKA_BOOTSTRAP_SERVERS}")
@@ -84,12 +126,16 @@ def run_forever() -> None:
 
             try:
                 news_event = json.loads(message.value().decode("utf-8"))
-                process_news_event(news_event)
+                process_news_event(news_event, producer)
                 consumer.commit(message=message)
             except Exception as exc:
                 print(f"[warning-streamer] Failed to process message: {exc}")
     finally:
         consumer.close()
+        try:
+            producer.flush(timeout=10)
+        except Exception as exc:
+            print(f"[warning-streamer] Failed to publish warnings on shutdown: {exc}")
         print("[warning-streamer] Stopped cleanly.")
 
 

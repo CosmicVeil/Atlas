@@ -7,6 +7,7 @@ from app.api.holdings.routes import holdings_bp
 from app.api.stock_data.routes import stocks_bp
 from app.api.ai.routes import ai_bp
 from app.api.news.routes import news_bp
+from app.api.profile.routes import profile_bp
 from app.models import User, Portfolio, Holding, Stock
 
 
@@ -24,6 +25,7 @@ def create_app():
     app.register_blueprint(stocks_bp, url_prefix='/api')
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     app.register_blueprint(news_bp, url_prefix='/api/news')
+    app.register_blueprint(profile_bp, url_prefix='/api/profile')
 
     with app.app_context():
         db.create_all()  # creates the SQLite tables if they don't exist yet
@@ -44,6 +46,12 @@ def create_app():
                 db.session.commit()
             except Exception:
                 db.session.rollback()
+
+        try:
+            db.session.execute(db.text("ALTER TABLE user ADD COLUMN preferences JSON NOT NULL DEFAULT '{}'"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
         from services.market_data import seed_database_stocks
         seed_database_stocks()

@@ -4,19 +4,24 @@ import os
 import json
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from math import isfinite
 from app.extensions import db
 from app.models.portfolio import Portfolio
 from app.models.holding import Holding
 from app.models.Stock import Stock
+from app.models.user import User
+from app import profile_fields
 from services import market_data
-from services import ai_service
+from services import ai_service, prediction_store
 import pathlib
 
 ai_bp = Blueprint('ai', __name__)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
 CACHE_FILE = os.path.join(DATA_DIR, 'ai_top_1000.json')
+# Cache enough entries for the largest 'top_n' a user can pick; each response is trimmed per user
+TOP_LIST_SIZE = profile_fields.FIELDS_BY_KEY['top_n']['max']
 
 
 def _get_portfolio_context(portfolio_id, user_id):
@@ -85,13 +90,29 @@ def analyze():
         if quote:
             stock_info.update(quote)
 
+    prediction = prediction_store.get_prediction(symbol)
+    if prediction:
+        analysis = {key: prediction.get(key) for key in (
+            'prediction', 'recommendation', 'confidence', 'targetPrice',
+            'summary', 'pros', 'cons', 'riskFactors')}
+        analysis.update({
+            'ticker': symbol, 'companyName': stock_info.get('name', symbol),
+            'currentPrice': stock_info.get('price'), 'isSimulated': False,
+            'potentialReturn': ai_service.calc_potential_return(prediction.get('targetPrice'), stock_info.get('price')),
+            'source': 'news', 'predictionUpdatedAt': prediction_store.serialize_time(prediction.get('updated_at')),
+        })
+        return jsonify(analysis), 200
+
     # 2. Get portfolio personalization context if provided
     portfolio_context = None
     if portfolio_id:
         portfolio_context = _get_portfolio_context(portfolio_id, user_id)
 
-    # 3. Analyze stock
-    analysis = ai_service.analyze_stock(stock_info, portfolio_context)
+    # 3. Analyze stock, tailored to the user's AI-visible profile preferences
+    user = db.session.get(User, int(user_id))
+    user_preferences = profile_fields.ai_context(user) if user else None
+    analysis = ai_service.analyze_stock(stock_info, portfolio_context, user_preferences)
+    analysis['source'] = 'simulated' if analysis.get('isSimulated') else 'model'
     return jsonify(analysis), 200
 
 
@@ -126,8 +147,10 @@ def budget_suggest():
 
     try:
         budget = float(budget)
-    except ValueError:
+    except (TypeError, ValueError, OverflowError):
         return jsonify({'error': 'Budget must be a number'}), 400
+    if not isfinite(budget) or budget < 0.01:
+        return jsonify({'error': 'Budget must be at least $0.01 and finite'}), 400
 
     # Get portfolio context
     portfolio_context = None
@@ -162,20 +185,62 @@ def _update_with_live_quotes(cached_data):
                 except ValueError:
                     stock['changePercent'] = 0.0
                 
-                # Update potentialReturn based on the new live price if targetPrice is available
-                # potentialReturn = targetPrice_gain_pct
-                if 'targetPrice' in stock and stock['targetPrice'] and stock['price']:
-                    try:
-                        target = float(stock['targetPrice'])
-                        price = float(stock['price'])
-                        stock['potentialReturn'] = round((target - price) / price * 100, 1)
-                    except (ValueError, TypeError):
-                        pass
+                # Recompute potentialReturn against the live price
+                if stock.get('targetPrice'):
+                    stock['potentialReturn'] = ai_service.calc_potential_return(stock['targetPrice'], stock['price'])
         except Exception as e:
             print(f"Error updating live price for {stock['ticker']}: {e}")
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         list(executor.map(get_and_update, all_stocks))
+
+
+@ai_bp.route('/predictions/latest', methods=['GET'])
+@jwt_required()
+def latest_predictions():
+    since_text = request.args.get('since')
+    since = None
+    if since_text is not None:
+        try:
+            since = datetime.fromisoformat(since_text.replace('Z', '+00:00'))
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return jsonify({'error': 'Invalid since timestamp'}), 400
+    latest = prediction_store.get_latest_prediction_time()
+    result = {'latestUpdatedAt': prediction_store.serialize_time(latest)}
+    if since is not None:
+        symbols = prediction_store.get_prediction_symbols_since(since) if latest else []
+        result.update(count=len(symbols), symbols=symbols)
+    return jsonify(result), 200
+
+
+@ai_bp.route('/predictions', methods=['GET'])
+@jwt_required()
+def predictions_for_symbols():
+    """News-driven predictions for the given tickers (?symbols=AAPL,MSFT). Market-wide, not personalised."""
+    symbols = [s.strip().upper() for s in request.args.get('symbols', '').split(',') if s.strip()][:50]
+    if not symbols:
+        return jsonify({'predictions': []}), 200
+    predictions = prediction_store.get_predictions_by_symbol(symbols)
+    result = []
+    for symbol in symbols:
+        doc = predictions.get(symbol)
+        if not doc:
+            continue
+        result.append({
+            'ticker': symbol,
+            'name': doc.get('name', symbol),
+            'recommendation': doc.get('recommendation', 'hold'),
+            'confidence': doc.get('confidence'),
+            'price': doc.get('price'),
+            'targetPrice': doc.get('targetPrice'),
+            'potentialReturn': doc.get('potentialReturn', 0.0),
+            'summary': doc.get('summary', ''),
+            'source': 'news',
+            'predictionUpdatedAt': prediction_store.serialize_time(doc.get('updated_at')),
+        })
+    return jsonify({'predictions': result}), 200
 
 
 @ai_bp.route('/top-1000', methods=['GET'])
@@ -206,6 +271,19 @@ def get_top_1000():
             print(f"Error reading top 1000 AI cache: {e}")
             needs_rebuild = True
 
+    latest_prediction = prediction_store.get_latest_prediction_time()
+    if cached_data:
+        try:
+            cached_time = datetime.fromisoformat(cached_data.get('lastUpdated', '')).astimezone()
+        except (ValueError, TypeError):
+            cached_time = None
+        cached_entries = cached_data.get('recommended', []) + cached_data.get('worst', [])
+        cached_news = any(item.get('source') == 'news' for item in cached_entries)
+        missing_source = any('source' not in item for item in cached_entries)
+        if missing_source or (latest_prediction and (cached_time is None or latest_prediction > cached_time)) or (cached_news and latest_prediction is None):
+            cached_data = _generate_and_cache_top_1000()
+            needs_rebuild = False
+
     if not cached_data:
         # No cache exists at all; generate it synchronously
         cached_data = _generate_and_cache_top_1000()
@@ -226,7 +304,7 @@ def get_top_1000():
 
     # Update with live quotes on every request so prices are always fresh
     _update_with_live_quotes(cached_data)
-    return jsonify(cached_data), 200
+    return jsonify(_limit_to_user_top_n(cached_data)), 200
 
 
 @ai_bp.route('/top-1000/refresh', methods=['POST'])
@@ -235,7 +313,14 @@ def refresh_top_1000():
     """Regenerates the cached top 1000 analysis and returns it."""
     data = _generate_and_cache_top_1000()
     _update_with_live_quotes(data)
-    return jsonify(data), 200
+    return jsonify(_limit_to_user_top_n(data)), 200
+
+
+def _limit_to_user_top_n(data):
+    """Trims the shared cache to the signed-in user's 'top_n' profile setting."""
+    user = db.session.get(User, int(get_jwt_identity()))
+    top_n = profile_fields.get_value(user, 'top_n') if user else profile_fields.FIELDS_BY_KEY['top_n']['default']
+    return {**data, 'recommended': data.get('recommended', [])[:top_n], 'worst': data.get('worst', [])[:top_n]}
 
 
 
@@ -254,6 +339,10 @@ def _generate_and_cache_top_1000():
     recommended = []
     worst = []
 
+    # Timestamp the snapshot before reading it so arrivals during the rebuild
+    # remain newer than the cache and trigger the next request's rebuild.
+    snapshot_started_at = datetime.now()
+    predictions = prediction_store.get_predictions_by_symbol()
     stocks = Stock.query.all()
     all_stocks_data = []
 
@@ -261,21 +350,34 @@ def _generate_and_cache_top_1000():
         try:
             ticker = stock.symbol
             # Use database AI analysis if it exists, otherwise check existing cache, otherwise fall back to fast local simulation
-            if stock.ai_recommendation:
+            prediction = predictions.get(ticker)
+            source = 'simulated'
+            if prediction:
+                rec_val = prediction['recommendation']
+                confidence_val = prediction.get('confidence', 50)
+                reasoning_val = prediction.get('summary', '')
+                pros_val = prediction.get('pros') or []
+                cons_val = prediction.get('cons') or []
+                target_val = prediction.get('targetPrice')
+                source = 'news'
+            elif stock.ai_recommendation:
+                source = 'model'
                 rec_val = stock.ai_recommendation
                 confidence_val = stock.ai_confidence or 50
                 reasoning_val = stock.ai_summary or ""
                 pros_val = json.loads(stock.ai_pros) if stock.ai_pros else []
                 cons_val = json.loads(stock.ai_cons) if stock.ai_cons else []
-                potential_val = round(float(stock.ai_target_price - stock.price) / stock.price * 100, 1) if (stock.ai_target_price and stock.price) else 0.0
-            elif ticker in existing_analyses:
+                target_val = stock.ai_target_price
+            elif existing_analyses.get(ticker, {}).get('targetPrice') and existing_analyses[ticker].get('source') != 'news':
+                # Only reuse cached entries that carry a targetPrice; older entries without one
+                # had potentialReturn stuck at 0.0 and are regenerated below instead
                 exist_item = existing_analyses[ticker]
                 rec_val = exist_item.get('recommendation', 'hold')
                 confidence_val = exist_item.get('confidence', 50)
                 reasoning_val = exist_item.get('reasoning', '')
                 pros_val = exist_item.get('keyPoints', []) if rec_val in ['strong_buy', 'buy'] else []
                 cons_val = exist_item.get('keyPoints', []) if rec_val in ['strong_sell', 'sell'] else []
-                potential_val = exist_item.get('potentialReturn', 0.0)
+                target_val = exist_item['targetPrice']
             else:
                 # Fast simulation fallback that doesn't hit external API keys
                 analysis = ai_service._simulate_stock_analysis(stock.to_dict(), None)
@@ -284,7 +386,9 @@ def _generate_and_cache_top_1000():
                 reasoning_val = analysis.get('summary', '')
                 pros_val = analysis.get('pros', [])
                 cons_val = analysis.get('cons', [])
-                potential_val = analysis.get('potentialReturn', 0.0)
+                target_val = analysis.get('targetPrice')
+
+            potential_val = ai_service.calc_potential_return(target_val, stock.price)
 
             # Determine keyPoints based on recommendation
             if rec_val in ['strong_buy', 'buy']:
@@ -313,7 +417,10 @@ def _generate_and_cache_top_1000():
                 'reasoning': reasoning_val,
                 'keyPoints': key_points,
                 'riskLevel': risk_level,
-                'potentialReturn': potential_val
+                'targetPrice': target_val,
+                'potentialReturn': potential_val,
+                'source': source,
+                **({'predictionUpdatedAt': prediction_store.serialize_time(prediction.get('updated_at'))} if prediction else {}),
             })
         except Exception as e:
             print(f"Error processing stock {stock.symbol} for top 1000: {e}")
@@ -322,40 +429,40 @@ def _generate_and_cache_top_1000():
         # Sort and filter for recommended list
         recommended_candidates = [s for s in all_stocks_data if s['recommendation'] in ['strong_buy', 'buy']]
         recommended_candidates.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
-        recommended = recommended_candidates[:10]
+        recommended = recommended_candidates[:TOP_LIST_SIZE]
 
-        # Fill recommended to 10 if necessary using 'hold' stocks
-        if len(recommended) < 10:
+        # Fill recommended to TOP_LIST_SIZE if necessary using 'hold' stocks
+        if len(recommended) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers and s['recommendation'] == 'hold']
             remaining.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
-            recommended.extend(remaining[:10 - len(recommended)])
+            recommended.extend(remaining[:TOP_LIST_SIZE - len(recommended)])
 
-        # If still not 10, fill with any remaining stocks
-        if len(recommended) < 10:
+        # If still short, fill with any remaining stocks
+        if len(recommended) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers]
             remaining.sort(key=lambda x: (x['potentialReturn'], x['confidence']), reverse=True)
-            recommended.extend(remaining[:10 - len(recommended)])
+            recommended.extend(remaining[:TOP_LIST_SIZE - len(recommended)])
 
         # Sort and filter for avoid list (worst)
         worst_candidates = [s for s in all_stocks_data if s['recommendation'] in ['strong_sell', 'sell']]
         worst_candidates.sort(key=lambda x: (x['potentialReturn'], -x['confidence']))
-        worst = worst_candidates[:10]
+        worst = worst_candidates[:TOP_LIST_SIZE]
 
-        # Fill worst to 10 if necessary using 'hold' stocks
-        if len(worst) < 10:
+        # Fill worst to TOP_LIST_SIZE if necessary using 'hold' stocks
+        if len(worst) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in worst + recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers and s['recommendation'] == 'hold']
             remaining.sort(key=lambda x: (x['potentialReturn'], -x['confidence']))
-            worst.extend(remaining[:10 - len(worst)])
+            worst.extend(remaining[:TOP_LIST_SIZE - len(worst)])
 
-        # If still not 10, fill with any remaining stocks (prioritizing non-buy stocks)
-        if len(worst) < 10:
+        # If still short, fill with any remaining stocks (prioritizing non-buy stocks)
+        if len(worst) < TOP_LIST_SIZE:
             used_tickers = {s['ticker'] for s in worst + recommended}
             remaining = [s for s in all_stocks_data if s['ticker'] not in used_tickers]
             remaining.sort(key=lambda x: (1 if x['recommendation'] in ['strong_buy', 'buy'] else 0, x['potentialReturn'], -x['confidence']))
-            worst.extend(remaining[:10 - len(worst)])
+            worst.extend(remaining[:TOP_LIST_SIZE - len(worst)])
 
     # If database is empty or we couldn't seed, return standard mock items
     if not recommended:
@@ -419,10 +526,13 @@ def _generate_and_cache_top_1000():
             }
         ]
 
+    for item in recommended + worst:
+        item.setdefault('source', 'simulated')
+
     cache_data = {
         'recommended': recommended,
         'worst': worst,
-        'lastUpdated': datetime.now().isoformat()
+        'lastUpdated': snapshot_started_at.isoformat()
     }
 
     try:

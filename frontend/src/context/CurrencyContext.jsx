@@ -1,4 +1,6 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { useAuth } from './AuthContext';
+import { getProfile } from '../api/profile';
 
 const CurrencyContext = createContext();
 
@@ -23,6 +25,15 @@ export function CurrencyProvider({ children }) {
       localStorage.setItem('atlas_currency', curr);
     }
   };
+
+  // The saved profile is the source of truth; localStorage only avoids a flash on reload
+  const { token } = useAuth();
+  useEffect(() => {
+    if (!token) return;
+    getProfile(token)
+      .then((data) => { if (data.values?.currency) setCurrency(data.values.currency); })
+      .catch(() => {});
+  }, [token]);
 
   const convertAndFormat = (amountInUSD, decimals = 2) => {
     if (amountInUSD === undefined || amountInUSD === null || isNaN(amountInUSD)) {

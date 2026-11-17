@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { motion } from "motion/react";
@@ -10,12 +10,17 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { getTop1000Analysis, refreshTop1000, getBudgetSuggestions, analyzeStock } from "../api/ai";
-import { getPortfolios } from "../api/portfolio";
+import { createPortfolio, getPortfolios } from "../api/portfolio";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 
+import PredictionBanner from '../components/PredictionBanner.jsx';
+import usePredictionBanner from '../components/usePredictionBanner';
+
 function AIAnalysisScreen() {
   const { token } = useAuth();
+  const navigate = useNavigate();
+  const predictionBanner = usePredictionBanner({ token, enabled: !!token });
   const [searchParams] = useSearchParams();
   const lastAutoSearchTicker = useRef("");
   const { currency, convertAndFormat, getCurrencySymbol, EXCHANGE_RATES } = useCurrency();
@@ -33,6 +38,9 @@ function AIAnalysisScreen() {
   const [budgetAdvice, setBudgetAdvice] = useState(null);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetError, setBudgetError] = useState("");
+  const [generatedPortfolioName, setGeneratedPortfolioName] = useState("AI Budget Portfolio");
+  const [savingPortfolio, setSavingPortfolio] = useState(false);
+  const [portfolioSaveError, setPortfolioSaveError] = useState("");
 
   // Search & Analyze Tab State
   const [searchTicker, setSearchTicker] = useState("");
@@ -114,10 +122,12 @@ function AIAnalysisScreen() {
   async function loadTop1000() {
     setIsLoading(true);
     try {
+      const baseline = await predictionBanner.captureBaseline();
       const data = await getTop1000Analysis(token);
       if (data && !data.error) {
         setRecommendedStocks(data.recommended || []);
         setWorstStocks(data.worst || []);
+        void predictionBanner.setBaseline([...(data.recommended || []), ...(data.worst || [])], baseline);
         if (data.lastUpdated) {
           const date = new Date(data.lastUpdated);
           setLastUpdated(date.toLocaleString("en-US", {
@@ -136,13 +146,21 @@ function AIAnalysisScreen() {
     }
   }
 
+  async function handleReloadPredictions() {
+    predictionBanner.startReload();
+    await loadTop1000();
+    if (searchResult) await handleSearchAnalyze(null, searchResult.ticker);
+  }
+
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
+      const baseline = await predictionBanner.captureBaseline();
       const data = await refreshTop1000(token);
       if (data && !data.error) {
         setRecommendedStocks(data.recommended || []);
         setWorstStocks(data.worst || []);
+        void predictionBanner.setBaseline([...(data.recommended || []), ...(data.worst || [])], baseline);
         if (data.lastUpdated) {
           const date = new Date(data.lastUpdated);
           setLastUpdated(date.toLocaleString("en-US", {
@@ -174,11 +192,13 @@ function AIAnalysisScreen() {
 
   async function handleBudgetSubmit(e) {
     e.preventDefault();
+    if (savingPortfolio) return;
     if (!budget || parseFloat(budget) <= 0) {
       setBudgetError("Please enter a valid budget amount");
       return;
     }
     setBudgetError("");
+    setPortfolioSaveError("");
     setBudgetLoading(true);
     setBudgetAdvice(null);
     try {
@@ -194,6 +214,32 @@ function AIAnalysisScreen() {
       setBudgetError("Failed to get budget advice. Please try again.");
     } finally {
       setBudgetLoading(false);
+    }
+  }
+
+  async function handleSaveBudgetPortfolio(e) {
+    e.preventDefault();
+    const name = generatedPortfolioName.trim();
+    if (savingPortfolio || !name || !budgetAdvice?.purchases?.length) return;
+
+    setSavingPortfolio(true);
+    setPortfolioSaveError("");
+    try {
+      const holdings = budgetAdvice.purchases.map(purchase => ({
+        symbol: purchase.ticker,
+        shares: purchase.sharesToBuy,
+        buy_price: purchase.pricePerShare,
+      }));
+      const portfolio = await createPortfolio(token, name, holdings);
+      if (portfolio.error) {
+        setPortfolioSaveError(portfolio.error);
+      } else {
+        navigate("/portfolio", { state: { portfolioId: portfolio.id } });
+      }
+    } catch {
+      setPortfolioSaveError("Unable to save the portfolio. Check your connection and try again.");
+    } finally {
+      setSavingPortfolio(false);
     }
   }
 
@@ -237,6 +283,7 @@ function AIAnalysisScreen() {
               <CardTitle>{stock.ticker}</CardTitle>
               {getRecommendationBadge(stock.recommendation)}
               {getRiskBadge(stock.riskLevel)}
+              {stock.source === 'news' && <Badge className="bg-sky-500/20 text-sky-400 border-sky-500/30 border">NEWS</Badge>}
             </div>
             <CardDescription>{stock.name}</CardDescription>
           </div>
@@ -331,6 +378,10 @@ function AIAnalysisScreen() {
           </p>
         </div>
 
+
+        {predictionBanner.visible && (
+          <PredictionBanner symbols={predictionBanner.symbols} onReload={handleReloadPredictions} onDismiss={predictionBanner.dismiss} reloading={isLoading || searchLoading} />
+        )}
 
         {/* Tabs */}
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
@@ -462,7 +513,7 @@ function AIAnalysisScreen() {
 
                     <Button
                       type="submit"
-                      disabled={budgetLoading}
+                      disabled={budgetLoading || savingPortfolio}
                       className="w-full bg-white text-black hover:bg-white/90 font-medium cursor-pointer py-6"
                     >
                       {budgetLoading ? (
@@ -538,6 +589,28 @@ function AIAnalysisScreen() {
                           ))}
                         </div>
                       </div>
+                      {budgetAdvice.purchases?.length > 0 && (
+                        <form onSubmit={handleSaveBudgetPortfolio} className="space-y-3 border-t border-white/10 pt-5">
+                          <label htmlFor="generated-portfolio-name" className="block text-sm font-medium text-white">
+                            Portfolio name
+                          </label>
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <Input
+                              id="generated-portfolio-name"
+                              value={generatedPortfolioName}
+                              onChange={e => setGeneratedPortfolioName(e.target.value)}
+                              required
+                              maxLength={100}
+                              disabled={savingPortfolio}
+                            />
+                            <Button type="submit" disabled={savingPortfolio || !generatedPortfolioName.trim()}>
+                              {savingPortfolio ? "Creating Portfolio…" : "Create Portfolio"}
+                            </Button>
+                          </div>
+                          <p className="text-xs text-white/60">Track the suggested shares at the prices shown. No orders are placed.</p>
+                          {portfolioSaveError && <p role="alert" className="text-sm text-red-400">{portfolioSaveError}</p>}
+                        </form>
+                      )}
                     </>
                   ) : (
                     <div className="h-64 flex flex-col items-center justify-center text-center text-white/40">
@@ -641,6 +714,7 @@ function AIAnalysisScreen() {
                                     {result.prediction}
                                   </span>
                                 </div>
+                                {result.source === 'news' && <Badge className="bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-none text-[10px] py-1 font-bold">NEWS</Badge>}
                                 {result.isSimulated && (
                                   <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 rounded-none text-[10px] py-1 font-bold">
                                     ⚠️ SIMULATED (NO API KEY)

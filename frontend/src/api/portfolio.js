@@ -15,14 +15,14 @@ export async function getPortfolios(token) {
   return readJsonResponse(res);
 }
 
-export async function createPortfolio(token, name) {
+export async function createPortfolio(token, name, holdings) {
   const res = await fetch(`${API_URL}/api/portfolios/`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({ name })
+    body: JSON.stringify({ name, holdings })
   });
   return readJsonResponse(res);
 }

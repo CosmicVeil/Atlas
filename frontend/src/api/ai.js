@@ -95,3 +95,19 @@ export async function getStocksAnalysis(token, { search = '', sort_by = 'symbol'
   });
   return res.json();
 }
+
+export async function getLatestPredictions(token, since = null) {
+  const query = since ? `?since=${encodeURIComponent(since)}` : '';
+  const res = await fetch(`${API_URL}/api/ai/predictions/latest${query}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return res.json();
+}
+
+export async function getPredictionsForSymbols(token, symbols) {
+  const query = encodeURIComponent(symbols.join(','));
+  const res = await fetch(`${API_URL}/api/ai/predictions?symbols=${query}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return res.json();
+}

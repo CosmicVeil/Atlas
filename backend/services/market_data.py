@@ -207,6 +207,8 @@ def get_quote(symbol):
                 'change_percent': change_pct,
                 'volume': volume,
                 'previous_close': prev_close,
+                'week_52_high': meta.get('fiftyTwoWeekHigh'),
+                'week_52_low': meta.get('fiftyTwoWeekLow'),
             }
 
             # Store in cache

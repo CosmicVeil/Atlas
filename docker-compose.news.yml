@@ -42,7 +42,7 @@ services:
       - /bin/sh
       - -c
     command:
-      - rpk topic create atlas.market.news -X brokers=redpanda:29092 --partitions 1 --replicas 1 || true
+      - rpk topic create atlas.market.news -X brokers=redpanda:29092 --partitions 1 --replicas 1 || true; rpk topic create atlas.market.warnings -X brokers=redpanda:29092 --partitions 1 --replicas 1 || true
     depends_on:
       redpanda:
         condition: service_healthy
@@ -80,11 +80,34 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       KAFKA_TOPIC: atlas.market.news
+      KAFKA_WARNINGS_TOPIC: atlas.market.warnings
       WARNING_STREAM_GROUP_ID: atlas-warning-streamer
       MONGO_URI: mongodb://mongo:27017
       MONGO_DATABASE: atlas
       MONGO_WARNINGS_COLLECTION: market_warnings
       # AI provider configuration is loaded from backend/.env above.
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_started
+    restart: unless-stopped
+
+  prediction-streamer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prediction_streamer
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      KAFKA_WARNINGS_TOPIC: atlas.market.warnings
+      PREDICTION_STREAM_GROUP_ID: atlas-prediction-streamer
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DATABASE: atlas
+      MONGO_WARNINGS_COLLECTION: market_warnings
+      MONGO_PREDICTIONS_COLLECTION: stock_predictions
     depends_on:
       redpanda-init:
         condition: service_completed_successfully
