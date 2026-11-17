@@ -6,7 +6,7 @@ import { getPortfolioRecommendations, getPredictionsForSymbols } from '../api/ai
 import { getPortfolioWarnings } from '../api/news';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Search, Loader2, AlertTriangle, Sparkles, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Plus, TrendingUp, TrendingDown, Brain, Trash2, Edit, Loader2, AlertTriangle, Sparkles, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
 import PredictionBanner from '../components/PredictionBanner.jsx';
 import usePredictionBanner from '../components/usePredictionBanner';

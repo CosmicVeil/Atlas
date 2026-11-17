@@ -16,12 +16,17 @@ function Signup() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const data = await signupApi(email, password);
-    setLoading(false);
-    if (data.error) {
-      setError(data.error);
-    } else {
-      setSuccess(true);
+    try {
+      const data = await signupApi(email, password);
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setSuccess(true);
+      }
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }
 

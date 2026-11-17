@@ -90,7 +90,7 @@ function UserStockAnalysis() {
       } else {
         setStock(data);
       }
-    } catch (err) {
+    } catch {
       setSearchError("Failed to fetch stock data. Please try again.");
     } finally {
       setIsLoadingSearch(false);
@@ -108,7 +108,7 @@ function UserStockAnalysis() {
       } else {
         setBrowseError("No stock data available.");
       }
-    } catch (err) {
+    } catch {
       setBrowseError("Failed to load stock list.");
     } finally {
       setIsLoadingBrowse(false);
