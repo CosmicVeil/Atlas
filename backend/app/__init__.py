@@ -1,5 +1,5 @@
 from flask import Flask
-from app.config import Config
+from app.config import Config, validate_secrets
 from app.extensions import db, jwt, cors
 from app.api.auth.routes import auth_bp
 from app.api.portfolio.routes import portfolio_bp
@@ -14,6 +14,7 @@ from app.models import User, Portfolio, Holding, Stock
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    validate_secrets(app.config)  # before anything touches the DB or signs a token
 
     db.init_app(app)
     jwt.init_app(app)

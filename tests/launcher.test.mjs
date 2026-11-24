@@ -74,6 +74,16 @@ test('buildEnv generates different secrets by default', () => {
   assert.notEqual(secret, jwt)
 })
 
+test('buildEnv fills both secrets in the real backend/.env.example', () => {
+  const example = fs.readFileSync(new URL('../backend/.env.example', import.meta.url), 'utf8')
+  const env = buildEnv(example)
+  for (const key of ['SECRET_KEY', 'JWT_SECRET_KEY']) {
+    const lines = env.split('\n').filter((line) => line.startsWith(`${key}=`))
+    assert.equal(lines.length, 1, `${key} should appear once`)
+    assert.match(lines[0], new RegExp(`^${key}=[0-9a-f]{64}$`))
+  }
+})
+
 test('parseArgs reads folder and flags', () => {
   assert.deepEqual(parseArgs([]), { target: null, start: true, help: false })
   assert.deepEqual(parseArgs(['dir', '--no-start']), { target: 'dir', start: false, help: false })
