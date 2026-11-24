@@ -20,7 +20,7 @@ Start Docker Desktop, then copy the environment template from the project root:
 cp backend/.env.example backend/.env
 ```
 
-Add your NewsData and NVIDIA API keys to `backend/.env`. Keep real keys out of `backend/.env.example`.
+Add your NewsData and NVIDIA API keys to `backend/.env`. Keep real keys out of `backend/.env.example`. If you also run Flask from this file, fill in `SECRET_KEY` and `JWT_SECRET_KEY` too (the backend won't start without them); generate each with `python -c "import secrets; print(secrets.token_hex(32))"`.
 
 ```dotenv
 NEWS_API_KEY=your-newsdata-key
