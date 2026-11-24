@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Info, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getMarketWarnings } from '../api/news';
 import { useAuth } from '../context/AuthContext';
+import { marketNewsStatus, parseWarningsResponse } from './marketNewsState';
 
 function WarningCard({ warning, tone }) {
   const isPositive = tone === 'positive';
@@ -37,37 +38,41 @@ function WarningCard({ warning, tone }) {
 }
 
 function MarketNews() {
+  // The warnings endpoint is public, so the page loads for logged-out
+  // visitors too; the token is only sent along when there is one.
   const { token } = useAuth();
   const [warnings, setWarnings] = useState({ negative: [], positive: [] });
+  const [available, setAvailable] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function loadWarnings() {
     setLoading(true);
-    setError('');
     try {
-      const data = await getMarketWarnings(token);
-      if (data.error) {
-        setError(data.error);
+      const result = parseWarningsResponse(await getMarketWarnings(token));
+      if (result.error) {
+        setError(result.error);
       } else {
-        setWarnings({
-          negative: data.negative || [],
-          positive: data.positive || [],
-        });
+        setError('');
+        setWarnings({ negative: result.negative, positive: result.positive });
+        setAvailable(result.available);
       }
     } catch {
-      setError('Unable to load market warnings.');
+      setError('Unable to reach the Atlas backend. Is the Flask server running?');
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }
 
   useEffect(() => {
-    if (!token) return;
     loadWarnings();
     const timer = setInterval(loadWarnings, 60000);
     return () => clearInterval(timer);
   }, [token]);
+
+  const status = marketNewsStatus({ loaded, error, available, ...warnings });
 
   return (
     <div className="min-h-screen bg-black text-white pt-24">
@@ -96,19 +101,39 @@ function MarketNews() {
           </div>
         )}
 
+        {status === 'unavailable' && (
+          <div className="border border-amber-500/20 bg-amber-500/5 p-4 mb-8 text-sm text-amber-100 flex items-start gap-3">
+            <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.5} />
+            <div>
+              <p>The news pipeline is offline, so there are no warnings to show right now.</p>
+              <p className="text-amber-100/60 mt-1">
+                Warnings are produced by the MongoDB + Kafka news pipeline. Start it to populate this page
+                (see docs/news-pipeline.md).
+              </p>
+            </div>
+          </div>
+        )}
+
+        {status === 'empty' && (
+          <div className="border border-white/10 bg-white/[0.02] p-4 mb-8 text-sm text-white/60 flex items-start gap-3">
+            <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.5} />
+            <p>The news pipeline is running but hasn&apos;t accepted any warnings yet. New ones appear here automatically.</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <section className="border border-white/5 bg-black p-6">
             <div className="flex items-center gap-3 mb-5">
               <AlertTriangle className="w-5 h-5 text-red-300" strokeWidth={1.5} />
               <h2 className="text-sm text-white/70 tracking-wider uppercase">Negative Warnings</h2>
             </div>
-            {loading && warnings.negative.length === 0 ? (
+            {status === 'loading' ? (
               <div className="flex items-center gap-3 text-white/40 text-sm py-6">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Loading risk warnings...
               </div>
             ) : warnings.negative.length === 0 ? (
-              <p className="text-white/40 text-sm py-4">No accepted negative warnings yet.</p>
+              <p className="text-white/40 text-sm py-4">No negative warnings to show.</p>
             ) : (
               <div className="space-y-4">
                 {warnings.negative.map((warning) => (
@@ -123,13 +148,13 @@ function MarketNews() {
               <Sparkles className="w-5 h-5 text-emerald-300" strokeWidth={1.5} />
               <h2 className="text-sm text-white/70 tracking-wider uppercase">Positive Warnings</h2>
             </div>
-            {loading && warnings.positive.length === 0 ? (
+            {status === 'loading' ? (
               <div className="flex items-center gap-3 text-white/40 text-sm py-6">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Loading positive signals...
               </div>
             ) : warnings.positive.length === 0 ? (
-              <p className="text-white/40 text-sm py-4">No accepted positive warnings yet.</p>
+              <p className="text-white/40 text-sm py-4">No positive warnings to show.</p>
             ) : (
               <div className="space-y-4">
                 {warnings.positive.map((warning) => (

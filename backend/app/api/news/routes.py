@@ -24,15 +24,21 @@ def get_warning_feed():
 
     limit = max(1, min(limit, 100))
 
+    # `available` lets the page tell "MongoDB/pipeline is offline" apart from
+    # "pipeline is running but has accepted no warnings yet"; both return
+    # empty lists, so the lists alone cannot say which one happened.
+    available = True
     try:
         warnings = get_market_warnings(limit=limit)
     except Exception as exc:
         print(f"[news-warnings] Warning lookup failed: {exc}")
         warnings = {'negative': [], 'positive': []}
+        available = False
 
     return jsonify({
         'negative': warnings['negative'],
         'positive': warnings['positive'],
+        'available': available,
     }), 200
 
 
