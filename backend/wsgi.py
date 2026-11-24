@@ -20,6 +20,13 @@ if os.path.exists(env_path):
                 key, val = line.split('=', 1)
                 os.environ[key.strip()] = val.strip().strip("'\"")
 
+
+def debug_enabled():
+    # The Werkzeug debugger runs arbitrary code from the browser, so it stays
+    # off unless FLASK_DEBUG is explicitly set to a true value.
+    return os.environ.get('FLASK_DEBUG', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 from app import create_app
 
 result = subprocess.run(
@@ -32,4 +39,4 @@ app = create_app()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, port=port)
+    app.run(debug=debug_enabled(), port=port)
